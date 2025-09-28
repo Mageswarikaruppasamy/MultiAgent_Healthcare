@@ -1,0 +1,65 @@
+# deploy/docker-compose.prod.yml
+# Production docker-compose configuration for Healthcare Multi-Agent System
+
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_PATH=/app/data/healthcare_data.db
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ../data:/app/data
+    networks:
+      - healthcare-network
+    restart: unless-stopped
+    depends_on:
+      data-generator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    ports:
+      - "80:80"
+    environment:
+      - REACT_APP_API_URL=/api
+    depends_on:
+      - backend
+    networks:
+      - healthcare-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  data-generator:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.data-generator
+    volumes:
+      - ../data:/app/data
+    command: python generate_dataset.py
+    networks:
+      - healthcare-network
+
+networks:
+  healthcare-network:
+    driver: bridge
+
+volumes:
+  healthcare-data:
+    driver: local

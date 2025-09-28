@@ -5,7 +5,7 @@ A personalized healthcare application built with multi-agent architecture using 
 ## 🏗️ Architecture
 
 - **Backend**: FastAPI with Agno multi-agent framework
-- **Frontend**: React with AG-UI  
+- **Frontend**: React with AG-UI
 - **AI**: Google Gemini API for intelligent responses
 - **Database**: SQLite for data persistence
 - **Deployment**: Docker containerization
