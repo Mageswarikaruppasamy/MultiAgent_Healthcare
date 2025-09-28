@@ -1,0 +1,407 @@
+{
+  "name": "meal_planner_agent",
+  "version": "1.0.0",
+  "description": "Generates adaptive meal plans respecting dietary preferences, medical constraints, and recent health data",
+  "type": "agent",
+  "category": "meal_planning",
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "user_id": {
+        "type": "integer",
+        "description": "User ID",
+        "minimum": 1,
+        "maximum": 100,
+        "required": true
+      },
+      "special_requirements": {
+        "type": "string",
+        "description": "Special dietary requirements or preferences for this meal plan",
+        "maxLength": 300,
+        "required": false
+      },
+      "action": {
+        "type": "string",
+        "description": "Action to perform",
+        "enum": ["generate", "get_latest"],
+        "default": "generate"
+      }
+    },
+    "required": ["user_id"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation was successful"
+      },
+      "message": {
+        "type": "string",
+        "description": "Response message with meal plan details"
+      },
+      "meal_plan": {
+        "type": "object",
+        "description": "Complete meal plan with nutrition information",
+        "properties": {
+          "breakfast": {
+            "$ref": "#/definitions/meal"
+          },
+          "lunch": {
+            "$ref": "#/definitions/meal"
+          },
+          "dinner": {
+            "$ref": "#/definitions/meal"
+          },
+          "daily_totals": {
+            "type": "object",
+            "properties": {
+              "calories": {
+                "type": "number"
+              },
+              "carbs": {
+                "type": "number"
+              },
+              "protein": {
+                "type": "number"
+              },
+              "fat": {
+                "type": "number"
+              },
+              "fiber": {
+                "type": "number"
+              }
+            }
+          },
+          "special_notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Special dietary notes and recommendations"
+          }
+        }
+      },
+      "user_context": {
+        "type": "object",
+        "description": "User context used for meal planning",
+        "properties": {
+          "dietary_preference": {
+            "type": "string",
+            "enum": ["vegetarian", "non-vegetarian", "vegan"]
+          },
+          "medical_conditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recent_glucose_trend": {
+            "type": "string",
+            "enum": ["elevated", "normal", "low"]
+          },
+          "recent_mood_pattern": {
+            "type": "string",
+            "enum": ["low energy", "balanced", "high energy"]
+          }
+        }
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "When the meal plan was created (for get_latest action)"
+      }
+    },
+    "required": ["success", "message"]
+  },
+  "definitions": {
+    "meal": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the meal"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the meal"
+        },
+        "ingredients": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of main ingredients"
+        },
+        "estimated_nutrition": {
+          "type": "object",
+          "properties": {
+            "calories": {
+              "type": "number"
+            },
+            "carbs": {
+              "type": "number"
+            },
+            "protein": {
+              "type": "number"
+            },
+            "fat": {
+              "type": "number"
+            },
+            "fiber": {
+              "type": "number"
+            }
+          }
+        },
+        "health_benefits": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Health benefits of this meal"
+        },
+        "preparation_time": {
+          "type": "string",
+          "description": "Estimated preparation time"
+        }
+      }
+    }
+  },
+  "llm_integration": {
+    "provider": "google_gemini",
+    "model": "gemini-pro",
+    "context_analysis": {
+      "recent_data_days": 3,
+      "factors": [
+        "dietary_preference",
+        "medical_conditions",
+        "recent_glucose_average",
+        "recent_mood_pattern",
+        "recent_meals"
+      ]
+    },
+    "prompt_template": "Create a personalized 3-meal plan (breakfast, lunch, dinner) for today based on the following user profile: User Profile: - Dietary preference: {dietary_preference} - Medical conditions: {medical_conditions} - Recent glucose average: {avg_glucose} mg/dL (status: {glucose_status}) - Recent mood pattern: {mood_analysis} - Recent meals: {recent_meals} Additional requirements: {special_requirements} Guidelines: 1. If glucose is elevated, focus on low-glycemic foods and balanced macros 2. If glucose is low, include complex carbs for stability 3. For diabetes, emphasize fiber, lean protein, and controlled portions 4. For hypertension, limit sodium and emphasize potassium-rich foods 5. For low energy moods, include mood-boosting foods (omega-3, complex carbs) 6. Avoid repeating recent meals unless they're particularly healthy 7. Match the dietary preference strictly Return your response in JSON format with this structure: {meal_plan_structure}"
+  },
+  "dietary_adaptations": {
+    "vegetarian": {
+      "protein_sources": ["tofu", "legumes", "quinoa", "eggs", "dairy", "nuts", "seeds"],
+      "restrictions": ["meat", "poultry", "fish", "seafood"],
+      "focus": ["plant-based proteins", "iron-rich foods", "B12 considerations"]
+    },
+    "vegan": {
+      "protein_sources": ["tofu", "tempeh", "legumes", "quinoa", "nuts", "seeds", "nutritional_yeast"],
+      "restrictions": ["meat", "poultry", "fish", "seafood", "dairy", "eggs", "honey"],
+      "focus": ["complete proteins", "B12", "iron", "calcium alternatives"]
+    },
+    "non-vegetarian": {
+      "protein_sources": ["chicken", "turkey", "fish", "lean beef", "eggs", "dairy"],
+      "restrictions": [],
+      "focus": ["lean proteins", "omega-3 fatty acids", "varied protein sources"]
+    }
+  },
+  "medical_condition_guidelines": {
+    "Type 2 Diabetes": {
+      "focus": ["low glycemic index", "high fiber", "controlled portions", "balanced macros"],
+      "avoid": ["simple sugars", "refined carbs", "high glycemic foods"],
+      "targets": {
+        "carbs_percentage": "40-45%",
+        "fiber_minimum": "35g",
+        "glycemic_index": "low to moderate"
+      }
+    },
+    "Hypertension": {
+      "focus": ["DASH diet principles", "potassium-rich foods", "low sodium"],
+      "avoid": ["high sodium", "processed foods", "excessive alcohol"],
+      "targets": {
+        "sodium_maximum": "2300mg",
+        "potassium_minimum": "3500mg",
+        "emphasis": ["fruits", "vegetables", "whole grains", "lean proteins"]
+      }
+    },
+    "High Cholesterol": {
+      "focus": ["soluble fiber", "omega-3 fatty acids", "plant sterols"],
+      "avoid": ["saturated fats", "trans fats", "dietary cholesterol"],
+      "targets": {
+        "saturated_fat": "<7% of calories",
+        "fiber": ">25g",
+        "emphasis": ["oats", "beans", "fatty fish", "nuts"]
+      }
+    }
+  },
+  "fallback_meal_plans": {
+    "vegetarian_diabetic": {
+      "breakfast": {
+        "name": "Steel-Cut Oats with Nuts and Seeds",
+        "carbs": 35,
+        "protein": 12,
+        "fat": 10,
+        "fiber": 8
+      },
+      "lunch": {
+        "name": "Quinoa Buddha Bowl",
+        "carbs": 50,
+        "protein": 18,
+        "fat": 14,
+        "fiber": 12
+      },
+      "dinner": {
+        "name": "Lentil Curry with Vegetables",
+        "carbs": 45,
+        "protein": 16,
+        "fat": 12,
+        "fiber": 15
+      }
+    },
+    "non_vegetarian_hypertension": {
+      "breakfast": {
+        "name": "Egg White Scramble with Spinach",
+        "carbs": 8,
+        "protein": 18,
+        "fat": 5,
+        "fiber": 3
+      },
+      "lunch": {
+        "name": "Grilled Salmon Salad",
+        "carbs": 12,
+        "protein": 35,
+        "fat": 18,
+        "fiber": 8
+      },
+      "dinner": {
+        "name": "Herb-Crusted Chicken with Roasted Vegetables",
+        "carbs": 25,
+        "protein": 32,
+        "fat": 12,
+        "fiber": 6
+      }
+    }
+  },
+  "database": {
+    "tables": ["meal_plans", "users", "mood_logs", "cgm_readings", "food_logs"],
+    "operations": ["INSERT", "SELECT"]
+  },
+  "analytics": {
+    "glucose_thresholds": {
+      "elevated": 140,
+      "normal_upper": 140,
+      "normal_lower": 100,
+      "low": 100
+    },
+    "mood_analysis": {
+      "low_energy_moods": ["tired", "sad", "anxious", "stressed"],
+      "high_energy_moods": ["happy", "excited", "energetic"],
+      "balanced_moods": ["calm", "content", "neutral"]
+    }
+  },
+  "ui_integration": {
+    "requirement_presets": [
+      "Low sodium for blood pressure management",
+      "Low glycemic index for diabetes",
+      "High protein for muscle building",
+      "Anti-inflammatory foods",
+      "Heart-healthy options",
+      "Quick and easy meals",
+      "Budget-friendly options",
+      "High fiber for digestion"
+    ],
+    "meal_presentation": {
+      "breakfast_emoji": "🌅",
+      "lunch_emoji": "☀️",
+      "dinner_emoji": "🌙",
+      "nutrition_format": "{calories} cal | {carbs}g carbs | {protein}g protein"
+    }
+  },
+  "examples": [
+    {
+      "input": {
+        "user_id": 1,
+        "special_requirements": "Low sodium for blood pressure",
+        "action": "generate"
+      },
+      "output": {
+        "success": true,
+        "message": "🍽️ Here's your personalized meal plan, Alice!\n\n🌅 **Breakfast**: Overnight Oats with Berries\n   Steel-cut oats with fresh blueberries and almonds\n   📊 320 cal | 45g carbs | 12g protein\n\n☀️ **Lunch**: Quinoa Buddha Bowl\n   Quinoa with roasted vegetables and tahini dressing\n   📊 480 cal | 65g carbs | 18g protein\n\n🌙 **Dinner**: Herb-Crusted Salmon with Sweet Potato\n   Baked salmon with roasted vegetables\n   📊 450 cal | 25g carbs | 32g protein\n\n📈 **Daily Totals**: 1250 calories, 135g carbs, 62g protein\n\n💡 **Special Notes**:\n• Low sodium ingredients selected for blood pressure management\n• Potassium-rich foods included (sweet potato, salmon)\n• Omega-3 fatty acids for heart health",
+        "meal_plan": {
+          "breakfast": {
+            "name": "Overnight Oats with Berries",
+            "description": "Steel-cut oats soaked with almond milk, topped with blueberries and walnuts",
+            "ingredients": ["steel-cut oats", "unsweetened almond milk", "blueberries", "walnuts", "cinnamon"],
+            "estimated_nutrition": {
+              "calories": 320,
+              "carbs": 45,
+              "protein": 12,
+              "fat": 12,
+              "fiber": 8
+            },
+            "health_benefits": ["High fiber", "Antioxidants", "Heart-healthy fats"]
+          },
+          "lunch": {
+            "name": "Quinoa Buddha Bowl",
+            "description": "Quinoa with roasted vegetables, chickpeas, and tahini dressing",
+            "ingredients": ["quinoa", "roasted bell peppers", "chickpeas", "spinach", "tahini", "lemon"],
+            "estimated_nutrition": {
+              "calories": 480,
+              "carbs": 65,
+              "protein": 18,
+              "fat": 16,
+              "fiber": 12
+            },
+            "health_benefits": ["Complete protein", "High fiber", "Plant-based nutrition"]
+          },
+          "dinner": {
+            "name": "Herb-Crusted Salmon with Sweet Potato",
+            "description": "Baked salmon with herbs, served with roasted sweet potato and broccoli",
+            "ingredients": ["salmon fillet", "sweet potato", "broccoli", "herbs", "olive oil"],
+            "estimated_nutrition": {
+              "calories": 450,
+              "carbs": 25,
+              "protein": 32,
+              "fat": 24,
+              "fiber": 6
+            },
+            "health_benefits": ["Omega-3 fatty acids", "High protein", "Potassium-rich"]
+          },
+          "daily_totals": {
+            "calories": 1250,
+            "carbs": 135,
+            "protein": 62,
+            "fat": 52,
+            "fiber": 26
+          },
+          "special_notes": [
+            "Low sodium ingredients selected for blood pressure management",
+            "Potassium-rich foods included (sweet potato, salmon)",
+            "Omega-3 fatty acids for heart health"
+          ]
+        },
+        "user_context": {
+          "dietary_preference": "non-vegetarian",
+          "medical_conditions": ["Hypertension"],
+          "recent_glucose_trend": "normal",
+          "recent_mood_pattern": "balanced"
+        }
+      }
+    },
+    {
+      "input": {
+        "user_id": 1,
+        "action": "get_latest"
+      },
+      "output": {
+        "success": true,
+        "message": "Here's your latest meal plan from 2024-01-15T10:30:00Z:",
+        "meal_plan": {
+          "breakfast": {
+            "name": "Overnight Oats with Berries",
+            "estimated_nutrition": {
+              "calories": 320,
+              "carbs": 45,
+              "protein": 12
+            }
+          }
+        },
+        "created_at": "2024-01-15T10:30:00Z"
+      }
+    }
+  ]
+}

@@ -1,0 +1,302 @@
+{
+  "name": "food_intake_agent",
+  "version": "1.0.0",
+  "description": "Records meals/snacks with timestamps and estimates nutritional content using LLM analysis",
+  "type": "agent",
+  "category": "nutrition_tracking",
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "user_id": {
+        "type": "integer",
+        "description": "User ID",
+        "minimum": 1,
+        "maximum": 100,
+        "required": true
+      },
+      "meal_description": {
+        "type": "string",
+        "description": "Description of the meal or snack consumed",
+        "maxLength": 500,
+        "required": false
+      },
+      "action": {
+        "type": "string",
+        "description": "Action to perform",
+        "enum": ["log", "get_stats"],
+        "default": "log"
+      }
+    },
+    "required": ["user_id"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation was successful"
+      },
+      "message": {
+        "type": "string",
+        "description": "Response message with nutrition summary"
+      },
+      "meal_description": {
+        "type": "string",
+        "description": "The meal that was logged"
+      },
+      "nutrition_analysis": {
+        "type": "object",
+        "description": "Detailed nutritional analysis of the meal",
+        "properties": {
+          "carbs": {
+            "type": "number",
+            "description": "Estimated carbohydrates in grams"
+          },
+          "protein": {
+            "type": "number",
+            "description": "Estimated protein in grams"
+          },
+          "fat": {
+            "type": "number",
+            "description": "Estimated fat in grams"
+          },
+          "calories": {
+            "type": "number",
+            "description": "Estimated total calories"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Analysis confidence level (1-10)"
+          }
+        }
+      },
+      "recommendations": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Nutrition recommendations based on analysis"
+      },
+      "nutrition_stats": {
+        "type": "object",
+        "description": "Nutrition statistics (for get_stats action)",
+        "properties": {
+          "total_entries": {
+            "type": "integer",
+            "description": "Total number of food entries"
+          },
+          "days_covered": {
+            "type": "integer",
+            "description": "Estimated days of food tracking"
+          },
+          "daily_averages": {
+            "type": "object",
+            "properties": {
+              "calories": {
+                "type": "number"
+              },
+              "carbs": {
+                "type": "number"
+              },
+              "protein": {
+                "type": "number"
+              },
+              "fat": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      },
+      "recent_meals": {
+        "type": "array",
+        "description": "Recent meal history (for get_stats action)",
+        "items": {
+          "type": "object",
+          "properties": {
+            "meal_description": {
+              "type": "string"
+            },
+            "calories": {
+              "type": "number"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    },
+    "required": ["success", "message"]
+  },
+  "llm_integration": {
+    "provider": "google_gemini",
+    "model": "gemini-pro",
+    "prompt_template": "Analyze the following meal/food description and estimate the nutritional content. Provide your response in JSON format with the following fields: - carbs: estimated carbohydrates in grams - protein: estimated protein in grams - fat: estimated fat in grams - calories: estimated total calories - confidence: confidence level (1-10). Meal description: \"{meal_description}\". Please be realistic in your estimates. If the description is vague, make reasonable assumptions for a typical serving. Return only the JSON response, no additional text.",
+    "fallback_strategy": "keyword_based_estimation"
+  },
+  "nutrition_estimation": {
+    "calorie_conversion": {
+      "carbs_per_gram": 4,
+      "protein_per_gram": 4,
+      "fat_per_gram": 9
+    },
+    "keyword_database": {
+      "carb_foods": {
+        "keywords": ["rice", "bread", "pasta", "potato", "oats", "cereal", "fruit", "sugar"],
+        "carb_boost": 20
+      },
+      "protein_foods": {
+        "keywords": ["chicken", "beef", "fish", "egg", "tofu", "beans", "lentil", "protein"],
+        "protein_boost": 20
+      },
+      "fat_foods": {
+        "keywords": ["oil", "butter", "nuts", "cheese", "avocado", "fried"],
+        "fat_boost": 15
+      }
+    },
+    "default_values": {
+      "carbs": 30,
+      "protein": 15,
+      "fat": 10
+    }
+  },
+  "database": {
+    "tables": ["food_logs"],
+    "operations": ["INSERT", "SELECT"]
+  },
+  "recommendation_logic": {
+    "high_carb_threshold": 60,
+    "low_carb_threshold": 15,
+    "high_protein_threshold": 25,
+    "low_protein_threshold": 10,
+    "high_calorie_threshold": 600,
+    "low_calorie_threshold": 200,
+    "recommendations": {
+      "high_carb": "High carb content - consider pairing with protein for better blood sugar control",
+      "low_carb": "Low carb meal - great for blood sugar stability",
+      "high_protein": "Excellent protein content - great for muscle health and satiety",
+      "low_protein": "Consider adding more protein to help with satiety and blood sugar control",
+      "high_calorie": "This is a substantial meal - consider lighter options for your next eating occasion",
+      "low_calorie": "Light meal - you might want to have a healthy snack later if needed",
+      "balanced": "Balanced meal - keep up the good work!"
+    }
+  },
+  "ui_integration": {
+    "quick_meals": [
+      "Grilled chicken breast with steamed broccoli",
+      "Greek yogurt with berries and granola",
+      "Quinoa salad with vegetables and feta cheese",
+      "Baked salmon with sweet potato",
+      "Vegetable stir-fry with tofu",
+      "Oatmeal with banana and almonds",
+      "Turkey sandwich on whole wheat bread",
+      "Mixed green salad with grilled shrimp"
+    ],
+    "input_validation": {
+      "maxLength": 500,
+      "placeholder": "E.g., 'Grilled chicken breast (6 oz) with steamed broccoli (1 cup) and brown rice (1/2 cup)'"
+    },
+    "confidence_display": {
+      "high_confidence": "≥ 7",
+      "medium_confidence": "4-6",
+      "low_confidence": "≤ 3",
+      "confidence_tip": "For more accurate analysis, try including portion sizes and cooking methods"
+    }
+  },
+  "analytics": {
+    "daily_nutrition_targets": {
+      "calories": {
+        "male_adult": 2500,
+        "female_adult": 2000,
+        "general": 2200
+      },
+      "protein": {
+        "minimum_grams": 50,
+        "optimal_percentage": 20
+      },
+      "carbs": {
+        "minimum_percentage": 45,
+        "maximum_percentage": 65
+      }
+    },
+    "meal_frequency_estimation": 3
+  },
+  "examples": [
+    {
+      "input": {
+        "user_id": 1,
+        "meal_description": "Grilled chicken breast (6 oz) with steamed broccoli (1 cup) and brown rice (1/2 cup)",
+        "action": "log"
+      },
+      "output": {
+        "success": true,
+        "message": "✅ Logged: Grilled chicken breast (6 oz) with steamed broccoli (1 cup) and brown rice (1/2 cup)\n\n📊 Estimated nutrition:\n• Calories: 420\n• Carbs: 35.0g\n• Protein: 45.0g\n• Fat: 8.0g",
+        "meal_description": "Grilled chicken breast (6 oz) with steamed broccoli (1 cup) and brown rice (1/2 cup)",
+        "nutrition_analysis": {
+          "carbs": 35.0,
+          "protein": 45.0,
+          "fat": 8.0,
+          "calories": 420,
+          "confidence": 8.5
+        },
+        "recommendations": [
+          "Excellent protein content - great for muscle health and satiety",
+          "Balanced meal - keep up the good work!"
+        ]
+      }
+    },
+    {
+      "input": {
+        "user_id": 1,
+        "meal_description": "large pizza slice",
+        "action": "log"
+      },
+      "output": {
+        "success": true,
+        "message": "✅ Logged: large pizza slice\n\n📊 Estimated nutrition:\n• Calories: 350\n• Carbs: 40.0g\n• Protein: 15.0g\n• Fat: 15.0g\n\n💡 Note: This is an estimate based on your description. For more accurate tracking, try to include portion sizes!",
+        "meal_description": "large pizza slice",
+        "nutrition_analysis": {
+          "carbs": 40.0,
+          "protein": 15.0,
+          "fat": 15.0,
+          "calories": 350,
+          "confidence": 4.0
+        },
+        "recommendations": [
+          "Consider adding more protein to help with satiety and blood sugar control"
+        ]
+      }
+    },
+    {
+      "input": {
+        "user_id": 1,
+        "action": "get_stats"
+      },
+      "output": {
+        "success": true,
+        "message": "📊 Your nutrition summary over the last 3 days:\n\n• Daily average calories: 1850\n• Daily average carbs: 210.5g\n• Daily average protein: 78.2g\n• Daily average fat: 65.1g\n• Total meals logged: 9\n\n✅ Your nutrition tracking shows good awareness of your eating patterns!",
+        "nutrition_stats": {
+          "total_entries": 9,
+          "days_covered": 3,
+          "daily_averages": {
+            "calories": 1850,
+            "carbs": 210.5,
+            "protein": 78.2,
+            "fat": 65.1
+          }
+        },
+        "recent_meals": [
+          {
+            "meal_description": "Grilled chicken breast with steamed broccoli",
+            "calories": 420,
+            "timestamp": "2024-01-15T18:30:00Z"
+          }
+        ]
+      }
+    }
+  ]
+}

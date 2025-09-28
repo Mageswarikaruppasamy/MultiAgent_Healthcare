@@ -1,0 +1,49 @@
+# agents/agno_workspace/agno.yml
+name: healthcare-multiagent-system
+version: "1.0.0"
+description: "Personalized Healthcare Multi-Agent System"
+
+environment:
+  GEMINI_API_KEY: "YOUR_GEMINI_API_KEY_PLACEHOLDER"
+  DATABASE_PATH: "../../data/healthcare_data.db"
+  LOG_LEVEL: "INFO"
+
+agents:
+  - name: greeting_agent
+    file: agents/greeting_agent.py
+    description: "Greets users personally and validates user ID"
+    schema: schemas/greeting.json
+    
+  - name: mood_tracker_agent
+    file: agents/mood_tracker_agent.py
+    description: "Tracks user mood and computes rolling averages"
+    schema: schemas/mood_tracker.json
+    
+  - name: cgm_agent
+    file: agents/cgm_agent.py
+    description: "Logs CGM readings and validates glucose ranges"
+    schema: schemas/cgm.json
+    
+  - name: food_intake_agent
+    file: agents/food_intake_agent.py
+    description: "Records meals and estimates nutritional content"
+    schema: schemas/food_intake.json
+    
+  - name: meal_planner_agent
+    file: agents/meal_planner_agent.py
+    description: "Generates personalized meal plans"
+    schema: schemas/meal_planner.json
+    
+  - name: interrupt_agent
+    file: agents/interrupt_agent.py
+    description: "Handles general Q&A and interrupts"
+    schema: schemas/interrupt.json
+
+orchestration:
+  flow_type: "conversational"
+  default_agent: "greeting_agent"
+  interrupt_agent: "interrupt_agent"
+  
+database:
+  type: "sqlite"
+  path: "../../data/healthcare_data.db"

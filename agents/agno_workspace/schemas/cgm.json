@@ -1,0 +1,271 @@
+{
+  "name": "cgm_agent",
+  "version": "1.0.0",
+  "description": "Logs Continuous Glucose Monitor readings and validates glucose ranges with intelligent alerts",
+  "type": "agent",
+  "category": "health_monitoring",
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "user_id": {
+        "type": "integer",
+        "description": "User ID",
+        "minimum": 1,
+        "maximum": 100,
+        "required": true
+      },
+      "glucose_reading": {
+        "type": "integer",
+        "description": "Glucose reading in mg/dL",
+        "minimum": 60,
+        "maximum": 350,
+        "required": false
+      },
+      "action": {
+        "type": "string",
+        "description": "Action to perform",
+        "enum": ["log", "generate", "get_stats"],
+        "default": "log"
+      }
+    },
+    "required": ["user_id"]
+  },
+  "outputs": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean",
+        "description": "Whether the operation was successful"
+      },
+      "message": {
+        "type": "string",
+        "description": "Response message with reading analysis"
+      },
+      "glucose_reading": {
+        "type": "integer",
+        "description": "The glucose reading (logged or generated)"
+      },
+      "status": {
+        "type": "string",
+        "enum": ["critically_low", "low", "normal", "elevated", "high", "critically_high"],
+        "description": "Glucose status category"
+      },
+      "alert_flag": {
+        "type": "boolean",
+        "description": "Whether this reading triggered a critical alert"
+      },
+      "recommendations": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Actionable recommendations based on the reading"
+      },
+      "cgm_stats": {
+        "type": "object",
+        "description": "CGM statistics (for get_stats action)",
+        "properties": {
+          "average_reading": {
+            "type": "number",
+            "description": "Average glucose reading"
+          },
+          "time_in_range": {
+            "type": "number",
+            "description": "Percentage of time in range (70-180 mg/dL)"
+          },
+          "total_readings": {
+            "type": "integer",
+            "description": "Total number of readings"
+          },
+          "trend": {
+            "type": "string",
+            "enum": ["rising", "falling", "stable"],
+            "description": "Recent glucose trend"
+          },
+          "alerts": {
+            "type": "integer",
+            "description": "Number of critical alerts"
+          }
+        }
+      }
+    },
+    "required": ["success", "message"]
+  },
+  "glucose_ranges": {
+    "critically_low": {
+      "range": [0, 69],
+      "color": "#dc2626",
+      "priority": "critical",
+      "immediate_action_required": true
+    },
+    "low": {
+      "range": [70, 79],
+      "color": "#f97316",
+      "priority": "moderate",
+      "immediate_action_required": false
+    },
+    "normal": {
+      "range": [80, 140],
+      "color": "#10b981",
+      "priority": "none",
+      "immediate_action_required": false
+    },
+    "elevated": {
+      "range": [141, 180],
+      "color": "#f59e0b",
+      "priority": "low",
+      "immediate_action_required": false
+    },
+    "high": {
+      "range": [181, 250],
+      "color": "#dc2626",
+      "priority": "moderate",
+      "immediate_action_required": false
+    },
+    "critically_high": {
+      "range": [251, 350],
+      "color": "#7c2d12",
+      "priority": "critical",
+      "immediate_action_required": true
+    }
+  },
+  "alert_system": {
+    "critical_low_threshold": 70,
+    "critical_high_threshold": 300,
+    "time_in_range": {
+      "target_min": 70,
+      "target_max": 180,
+      "excellent_threshold": 80,
+      "good_threshold": 70
+    }
+  },
+  "realistic_generation": {
+    "baseline_adjustment": {
+      "Type 2 Diabetes": {
+        "min_adjustment": 20,
+        "max_adjustment": 60,
+        "spike_probability": 0.2
+      },
+      "Hypertension": {
+        "min_adjustment": 5,
+        "max_adjustment": 15,
+        "spike_probability": 0.1
+      },
+      "None": {
+        "min_adjustment": -20,
+        "max_adjustment": 20,
+        "spike_probability": 0.05
+      }
+    },
+    "variation_range": [-20, 30],
+    "absolute_bounds": [60, 350]
+  },
+  "database": {
+    "tables": ["cgm_readings", "users"],
+    "operations": ["INSERT", "SELECT"]
+  },
+  "recommendations_by_status": {
+    "critically_low": [
+      "Consume 15g of fast-acting carbs (glucose tablets, juice)",
+      "Recheck in 15 minutes",
+      "Contact healthcare provider immediately"
+    ],
+    "low": [
+      "Have a small snack with 15-20g carbs",
+      "Avoid intense exercise for now",
+      "Monitor closely"
+    ],
+    "normal": [
+      "Keep up the good work!",
+      "Maintain your current meal plan",
+      "Continue regular monitoring"
+    ],
+    "elevated": [
+      "Consider a low-carb meal for next eating",
+      "Stay hydrated",
+      "Light physical activity may help"
+    ],
+    "high": [
+      "Avoid high-carb foods",
+      "Increase water intake",
+      "Consider contacting healthcare provider"
+    ],
+    "critically_high": [
+      "Avoid high-carb foods",
+      "Increase water intake significantly",
+      "Contact healthcare provider immediately"
+    ]
+  },
+  "ui_elements": {
+    "status_icons": {
+      "critically_low": "🚨",
+      "low": "📉",
+      "normal": "✅",
+      "elevated": "📈",
+      "high": "⚠️",
+      "critically_high": "🚨"
+    },
+    "input_validation": {
+      "min_value": 60,
+      "max_value": 350,
+      "step": 1,
+      "placeholder": "Enter reading (80-300)"
+    }
+  },
+  "examples": [
+    {
+      "input": {
+        "user_id": 1,
+        "glucose_reading": 120,
+        "action": "log"
+      },
+      "output": {
+        "success": true,
+        "message": "✅ Great! Your glucose is in normal range at 120 mg/dL.",
+        "glucose_reading": 120,
+        "status": "normal",
+        "alert_flag": false,
+        "recommendations": [
+          "Keep up the good work!",
+          "Maintain your current meal plan",
+          "Continue regular monitoring"
+        ]
+      }
+    },
+    {
+      "input": {
+        "user_id": 5,
+        "action": "generate"
+      },
+      "output": {
+        "success": true,
+        "message": "⚠️ Your glucose is high at 210 mg/dL. Consider adjusting your next meal and increasing water intake.",
+        "glucose_reading": 210,
+        "status": "high",
+        "alert_flag": false,
+        "recommendations": [
+          "Avoid high-carb foods",
+          "Increase water intake",
+          "Consider contacting healthcare provider"
+        ]
+      }
+    },
+    {
+      "input": {
+        "user_id": 1,
+        "action": "get_stats"
+      },
+      "output": {
+        "success": true,
+        "message": "📊 Your glucose summary over the last 7 days:\n\n• Average reading: 135.2 mg/dL\n• Time in range (70-180): 78.5%\n• Trend: Stable\n• Total readings: 14\n• Alerts: 0\n\n👍 Good glucose management. Small improvements can make a big difference.",
+        "cgm_stats": {
+          "average_reading": 135.2,
+          "time_in_range": 78.5,
+          "total_readings": 14,
+          "trend": "stable",
+          "alerts": 0
+        }
+      }
+    }
+  ]
+}
