@@ -48,13 +48,13 @@ cp .env.example .env
 echo "GEMINI_API_KEY=your_actual_api_key_here" >> .env
 ```
 
-### 2. Generate Dataset
+### 2. Run with Docker
 ```bash
 # Generate synthetic user data and start frontend and backend
 docker-compose up --build
 ```
 
-### 3. Run with Docker (Recommended)
+### 3. Recommended
 ```bash
 # Reuse the existing dataset
 docker-compose up
