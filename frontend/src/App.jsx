@@ -1,8 +1,8 @@
 // frontend/src/App.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Heart, User, Activity, MessageSquare, Utensils, Plus, Send, TrendingUp } from 'lucide-react';
-import MealPlanner from './components/Mealplanner';
+import MealPlanner from './components/Mealplanner.jsx';
 
 // Simple inline CSS
 const styles = {
@@ -81,6 +81,27 @@ const styles = {
   }
 };
 
+// Styles for bubbles
+const userBubbleStyle = {
+  background: "#2563eb",   // blue
+  color: "white",
+  alignSelf: "flex-end",
+  borderRadius: "12px 12px 0 12px",
+  padding: "12px",
+  maxWidth: "70%",
+  marginBottom: "12px"
+};
+
+const assistantBubbleStyle = {
+  background: "#f1f5f9",   // light grey
+  color: "#111827",
+  alignSelf: "flex-start",
+  borderRadius: "12px 12px 12px 0",
+  padding: "12px",
+  maxWidth: "70%",
+  marginBottom: "12px"
+};
+
 function App() {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -110,27 +131,23 @@ function App() {
     setMessage('');
 
     try {
-      const response = await axios.post('/api/greet', 
-        { user_id: parseInt(userId) },
-        { 
-          baseURL: 'http://localhost:8000',
-          timeout: 10000 
-        }
+      const response = await apiCallWithRetry('/api/greet', 'POST', 
+        { user_id: parseInt(userId) }
       );
       
-      if (response.data.success) {
+      if (response.success) {
         setUser({
           id: userId,
-          ...response.data.user_info
+          ...response.user_info
         });
         setIsAuthenticated(true);
         setMessage('Login successful!');
       } else {
-        setMessage(response.data.message || 'Login failed');
+        setMessage(response.message || 'Login failed');
       }
     } catch (error) {
       console.error('Login error:', error);
-      setMessage('Login failed. Please check your user ID and try again.');
+      setMessage('Login failed after multiple attempts. Please check your user ID and try again.');
     } finally {
       setLoading(false);
     }
@@ -143,215 +160,42 @@ function App() {
     setActiveSection('dashboard');
   };
 
-  // API helper function
+  // API helper function with retry logic
+  const apiCallWithRetry = async (endpoint, method = 'GET', data = null, maxRetries = 2) => {
+    let lastError;
+    
+    for (let i = 0; i <= maxRetries; i++) {
+      try {
+        const config = {
+          method,
+          url: `http://localhost:8000${endpoint}`,
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 35000  // 35 seconds timeout
+        };
+        if (data) config.data = data;
+        
+        const response = await axios(config);
+        return response.data;
+      } catch (error) {
+        lastError = error;
+        console.error(`API call failed for ${endpoint} (attempt ${i + 1}/${maxRetries + 1}):`, error);
+        
+        // Don't retry on client errors (4xx) or if it's the last attempt
+        if ((error.response && error.response.status >= 400 && error.response.status < 500) || i === maxRetries) {
+          throw error;
+        }
+        
+        // Wait before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+      }
+    }
+    
+    throw lastError;
+  };
+
+  // API helper function (updated to use retry logic)
   const apiCall = async (endpoint, method = 'GET', data = null) => {
-    try {
-      const config = {
-        method,
-        url: `http://localhost:8000${endpoint}`,
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 10000
-      };
-      if (data) config.data = data;
-      
-      const response = await axios(config);
-      return response.data;
-    } catch (error) {
-      console.error(`API call failed for ${endpoint}:`, error);
-      throw error;
-    }
-  };
-
-  // Load initial data when user logs in
-  useEffect(() => {
-    if (isAuthenticated && user) {
-      loadInitialData();
-    }
-  }, [isAuthenticated, user]);
-
-  const loadInitialData = async () => {
-    try {
-      // Load mood stats
-      const moodResult = await apiCall('/api/mood', 'POST', {
-        user_id: parseInt(user.id),
-        action: 'get_stats'
-      });
-      if (moodResult.success && moodResult.mood_history) {
-        // Transform mood_history to match expected format
-        const transformedMoodData = moodResult.mood_history.map(entry => ({
-          mood: entry.mood,
-          timestamp: entry.timestamp,
-          score: entry.score
-        }));
-        setMoodData(transformedMoodData);
-      }
-
-      // Load glucose stats
-      const glucoseResult = await apiCall('/api/cgm', 'POST', {
-        user_id: parseInt(user.id),
-        action: 'get_stats'
-      });
-      if (glucoseResult.success && glucoseResult.cgm_history) {
-        // Transform cgm_history to match expected format
-        const transformedData = glucoseResult.cgm_history.map(entry => ({
-          reading: entry.glucose_reading,
-          timestamp: entry.timestamp,
-          status: getGlucoseStatus(entry.glucose_reading).status
-        }));
-        setGlucoseData(transformedData);
-      }
-
-      // Load food stats
-      const foodResult = await apiCall('/api/food', 'POST', {
-        user_id: parseInt(user.id),
-        action: 'get_stats'
-      });
-      if (foodResult.success && foodResult.recent_meals) {
-        // Transform food data to include nutrition in expected format
-        const transformedFoodData = foodResult.recent_meals.map(entry => ({
-          ...entry,
-          description: entry.meal_description,
-          nutritional_analysis: {
-            calories: Math.round(entry.calories),
-            carbs: entry.carbs,
-            protein: entry.protein,
-            fat: entry.fat
-          }
-        }));
-        setFoodLogs(transformedFoodData);
-      }
-      
-      // Generate sample data if both arrays are empty
-      if (moodData.length === 0 && foodLogs.length === 0) {
-        await generateSampleData();
-      }
-    } catch (error) {
-      console.error('Failed to load initial data:', error);
-    }
-  };
-  
-  // Generate sample data function
-  const generateSampleData = async () => {
-    try {
-      // Generate sample mood entries
-      const sampleMoods = ['Happy', 'Calm', 'Anxious', 'Tired', 'Happy'];
-      for (const mood of sampleMoods) {
-        await apiCall('/api/mood', 'POST', {
-          user_id: parseInt(user.id),
-          mood: mood,
-          action: 'log'
-        });
-      }
-      
-      // Generate sample food logs
-      const sampleMeals = [
-        'Grilled chicken breast with quinoa and steamed vegetables',
-        'Greek yogurt with berries and granola',
-        'Salmon with sweet potato and asparagus'
-      ];
-      for (const meal of sampleMeals) {
-        await apiCall('/api/food', 'POST', {
-          user_id: parseInt(user.id),
-          meal_description: meal,
-          action: 'log'
-        });
-      }
-      
-      // Reload data after generating samples
-      await loadInitialData();
-    } catch (error) {
-      console.error('Failed to generate sample data:', error);
-    }
-  };
-
-  // Mood Tracker Functions
-  const handleMoodSubmit = async (mood) => {
-    try {
-      setLoading(true);
-      const result = await apiCall('/api/mood', 'POST', {
-        user_id: parseInt(user.id),
-        mood: mood,
-        action: 'log'
-      });
-      
-      if (result.success) {
-        setMessage(`Mood "${mood}" logged successfully!`);
-        loadInitialData();
-      }
-    } catch (error) {
-      setMessage('Failed to log mood. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Glucose Monitor Functions
-  const handleGlucoseSubmit = async (e) => {
-    e.preventDefault();
-    if (!glucoseReading) return;
-    
-    try {
-      setLoading(true);
-      const result = await apiCall('/api/cgm', 'POST', {
-        user_id: parseInt(user.id),
-        glucose_reading: parseInt(glucoseReading),
-        action: 'log'
-      });
-      
-      if (result.success) {
-        setMessage(`Glucose reading ${glucoseReading} mg/dL logged successfully!`);
-        setGlucoseReading('');
-        loadInitialData();
-      }
-    } catch (error) {
-      setMessage('Failed to log glucose reading. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateGlucoseReading = async () => {
-    try {
-      setLoading(true);
-      const result = await apiCall('/api/cgm', 'POST', {
-        user_id: parseInt(user.id),
-        action: 'generate'
-      });
-      
-      if (result.success) {
-        setMessage(`Generated glucose reading: ${result.glucose_reading} mg/dL`);
-        loadInitialData();
-      }
-    } catch (error) {
-      setMessage('Failed to generate glucose reading.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Food Logger Functions
-  const handleFoodSubmit = async (e) => {
-    e.preventDefault();
-    if (!foodDescription.trim()) return;
-    
-    try {
-      setLoading(true);
-      const result = await apiCall('/api/food', 'POST', {
-        user_id: parseInt(user.id),
-        meal_description: foodDescription,
-        action: 'log'
-      });
-      
-      if (result.success) {
-        setMessage('Food logged successfully!');
-        setFoodDescription('');
-        loadInitialData();
-      }
-    } catch (error) {
-      setMessage('Failed to log food. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    return await apiCallWithRetry(endpoint, method, data);
   };
 
   // Helper function to determine glucose status
@@ -367,129 +211,423 @@ function App() {
     }
   };
 
-  // Function to render glucose line chart
-  const renderGlucoseChart = () => {
-    if (glucoseData.length === 0) {
-      return (
-        <div style={{ textAlign: 'center', color: '#666', padding: '40px' }}>
-          No glucose data available. Start logging readings to see trends.
-        </div>
-      );
+  // Load initial data when user logs in
+  const loadInitialData = useCallback(async () => {
+    try {
+      // Load mood stats
+      const moodResult = await apiCallWithRetry('/api/mood', 'POST', {
+        user_id: parseInt(user.id),
+        action: 'get_stats'
+      });
+      if (moodResult.success && moodResult.mood_history) {
+        // Transform mood_history to match expected format
+        const transformedMoodData = moodResult.mood_history.map(entry => ({
+          mood: entry.mood,
+          timestamp: entry.timestamp,
+          score: entry.score || 0 // Add fallback for score
+        }));
+        setMoodData(transformedMoodData);
+      }
+
+      // Load glucose stats
+      const glucoseResult = await apiCallWithRetry('/api/cgm', 'POST', {
+        user_id: parseInt(user.id),
+        action: 'get_stats'
+      });
+      if (glucoseResult.success && glucoseResult.cgm_history) {
+        // Transform cgm_history to match expected format
+        const transformedData = glucoseResult.cgm_history.map(entry => ({
+          reading: entry.glucose_reading,
+          timestamp: entry.timestamp,
+          status: getGlucoseStatus(entry.glucose_reading).status
+        }));
+        setGlucoseData(transformedData);
+      }
+
+      // Load food stats
+      const foodResult = await apiCallWithRetry('/api/food', 'POST', {
+        user_id: parseInt(user.id),
+        action: 'get_stats'
+      });
+      if (foodResult.success && foodResult.nutrition_analysis) {
+        // Transform food data to include nutrition in expected format
+        const transformedFoodData = foodResult.nutrition_analysis.map(entry => ({
+          ...entry,
+          description: entry.meal_description || entry.description || 'No description',
+          nutritional_analysis: {
+            calories: Math.round(entry.estimated_calories !== undefined ? entry.estimated_calories : 
+                     entry.calories !== undefined ? entry.calories : 0),
+            carbs: entry.estimated_carbs !== undefined ? entry.estimated_carbs : 
+                 entry.carbohydrates !== undefined ? entry.carbohydrates : 
+                 entry.carbs !== undefined ? entry.carbs : 0,
+            protein: entry.estimated_protein !== undefined ? entry.estimated_protein : 
+                   entry.protein !== undefined ? entry.protein : 0,
+            fat: entry.estimated_fat !== undefined ? entry.estimated_fat : 
+               entry.fat !== undefined ? entry.fat : 0,
+            fiber: entry.estimated_fiber !== undefined ? entry.estimated_fiber : 
+                 entry.fiber !== undefined ? entry.fiber : 0
+          }
+        }));
+        setFoodLogs(transformedFoodData);
+      }
+      
+      // Clear any previous error messages on successful load
+      if (message && message.includes('Failed to load')) {
+        setMessage('');
+      }
+    } catch (error) {
+      console.error('Failed to load initial data:', error);
+      setMessage('Failed to load health data after multiple attempts. Please try refreshing the page.');
+      // Re-throw the error so calling functions can handle it appropriately
+      throw error;
     }
+  }, [user, getGlucoseStatus, message, setMessage]);
 
-    const last7Days = glucoseData.slice(0, 7).reverse();
-    const maxReading = Math.max(...last7Days.map(d => d.reading));
-    const minReading = Math.min(...last7Days.map(d => d.reading));
-    const range = maxReading - minReading || 50;
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      loadInitialData();
+    }
+  }, [isAuthenticated, user, loadInitialData]);
 
-    return (
-      <div style={{ height: '200px', position: 'relative' }}>
-        {/* Y-axis labels */}
-        <div style={{ position: 'absolute', left: '0', top: '0', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', fontSize: '12px', color: '#666' }}>
-          <span>{Math.round(maxReading + 20)}</span>
-          <span>{Math.round((maxReading + minReading) / 2)}</span>
-          <span>{Math.round(minReading - 20)}</span>
-        </div>
-        
-        {/* Chart area */}
-        <div style={{ marginLeft: '40px', height: '100%', position: 'relative', border: '1px solid #e5e7eb', borderRadius: '4px', padding: '10px' }}>
-          {/* Reference lines */}
-          <div style={{ position: 'absolute', top: '30%', left: '0', right: '0', height: '1px', background: '#10b981', opacity: '0.3' }}></div>
-          <div style={{ position: 'absolute', top: '30%', left: '0', fontSize: '10px', color: '#10b981' }}>Normal Range</div>
-          
-          {/* Data points and line */}
-          <svg width="100%" height="100%" style={{ position: 'absolute', top: '0', left: '0' }}>
-            {/* Line connecting the dots */}
-            <polyline
-              points={last7Days.map((d, i) => {
-                const x = (i / (last7Days.length - 1)) * 100;
-                const y = 100 - ((d.reading - (minReading - 20)) / (range + 40)) * 100;
-                return `${x}%,${y}%`;
-              }).join(' ')}
-              fill="none"
-              stroke="#667eea"
-              strokeWidth="2"
-            />
-            {/* Data points */}
-            {last7Days.map((d, i) => {
-              const x = (i / (last7Days.length - 1)) * 100;
-              const y = 100 - ((d.reading - (minReading - 20)) / (range + 40)) * 100;
-              return (
-                <circle
-                  key={i}
-                  cx={`${x}%`}
-                  cy={`${y}%`}
-                  r="4"
-                  fill={getGlucoseStatus(d.reading).color}
-                  stroke="black"
-                  strokeWidth="2"
-                />
-              );
-            })}
-          </svg>
-          
-          {/* X-axis labels */}
-          <div style={{ position: 'absolute', bottom: '-25px', left: '0', right: '0', display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#666' }}>
-            {last7Days.map((d, i) => (
-              <span key={i}>{new Date(d.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+  // Mood Tracker Functions
+  const handleMoodSubmit = async (mood) => {
+    try {
+      setLoading(true);
+      const result = await apiCallWithRetry('/api/mood', 'POST', {
+        user_id: parseInt(user.id),
+        mood: mood,
+        action: 'log'
+      });
+      
+      if (result.success) {
+        setMessage(`Mood "${mood}" logged successfully!`);
+        // Add a small delay to ensure database commits are completed
+        await new Promise(resolve => setTimeout(resolve, 500));
+        loadInitialData();
+      }
+    } catch (error) {
+      setMessage('Failed to log mood after multiple attempts. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Function to render mood bar chart
-  const renderMoodChart = () => {
-    if (moodData.length === 0) {
-      return (
-        <div style={{ textAlign: 'center', color: '#666', padding: '40px' }}>
-          No mood data available. Start tracking your mood to see patterns.
-        </div>
-      );
+  // New function to handle free text mood input
+  const handleMoodTextInput = async (e) => {
+    e.preventDefault();
+    const moodText = e.target.moodText.value;
+    if (!moodText.trim()) return;
+    
+    try {
+      setLoading(true);
+      const result = await apiCallWithRetry('/api/mood', 'POST', {
+        user_id: parseInt(user.id),
+        user_input: moodText,
+        action: 'log'
+      });
+      
+      if (result.success) {
+        setMessage(`Mood "${result.logged_mood}" logged successfully based on your input!`);
+        e.target.moodText.value = '';
+        // Add a small delay to ensure database commits are completed
+        await new Promise(resolve => setTimeout(resolve, 500));
+        loadInitialData();
+      }
+    } catch (error) {
+      setMessage('Failed to log mood after multiple attempts. Please try again.');
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const moodCounts = moodData.reduce((acc, entry) => {
-      acc[entry.mood] = (acc[entry.mood] || 0) + 1;
-      return acc;
-    }, {});
+  // Food Logger Functions
+  const handleFoodSubmit = async (e) => {
+    e.preventDefault();
+    if (!foodDescription.trim()) return;
+    
+    try {
+      setLoading(true);
+      setMessage('Analyzing nutritional content... This may take a moment.');
+      
+      const result = await apiCallWithRetry('/api/food', 'POST', {
+        user_id: parseInt(user.id),
+        meal_description: foodDescription,
+        action: 'log'
+      });
+      
+      if (result.success) {
+        setMessage('Food logged successfully!');
+        setFoodDescription('');
+        
+        // Refresh data without unnecessary delays
+        try {
+          setMessage('Updating food log...');
+          await apiCallWithRetry('/api/food', 'POST', {
+            user_id: parseInt(user.id),
+            action: 'get_stats'
+          });
+          await loadInitialData();
+        } catch (error) {
+          console.warn('Failed to refresh food data:', error);
+          // Even if refresh fails, the food was logged successfully
+        }
+      } else {
+        setMessage(result.message || 'Failed to log food. Please try again.');
+      }
+    } catch (error) {
+      console.error('Food logging error:', error);
+      setMessage(`Failed to log food after multiple attempts: ${error.message || 'Unknown error'}. Please try again.`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const moodColors = {
-      'Happy': '#10b981',
-      'Sad': '#3b82f6',
-      'Anxious': '#f59e0b',
-      'Tired': '#6b7280',
-      'Angry': '#ef4444',
-      'Calm': '#8b5cf6'
-    };
-
-    const maxCount = Math.max(...Object.values(moodCounts));
-
+  // Function to render glucose line chart
+  const renderGlucoseChart = () => {
+  if (glucoseData.length === 0) {
     return (
-      <div style={{ height: '200px' }}>
-        <div style={{ display: 'flex', alignItems: 'end', height: '160px', gap: '8px', justifyContent: 'space-around' }}>
-          {Object.entries(moodCounts).map(([mood, count]) => (
-            <div key={mood} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-              <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>{count}</div>
-              <div
-                style={{
-                  width: '100%',
-                  maxWidth: '40px',
-                  height: `${(count / maxCount) * 120}px`,
-                  background: moodColors[mood] || '#6b7280',
-                  borderRadius: '4px 4px 0 0',
-                  minHeight: '20px'
-                }}
-              ></div>
-              <div style={{ fontSize: '11px', color: '#666', marginTop: '8px', transform: 'rotate(-45deg)', transformOrigin: 'center' }}>
-                {mood}
-              </div>
-            </div>
+      <div style={{ textAlign: 'center', color: '#666', padding: '40px' }}>
+        No glucose data available. Start logging readings to see trends.
+      </div>
+    );
+  }
+
+  // Sort by timestamp from DB
+  const sortedData = [...glucoseData].sort(
+    (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+  );
+
+  // Take the last 7 readings
+  const last7Readings = sortedData.slice(-7);
+
+  const maxReading = Math.max(...last7Readings.map(d => d.reading));
+  const minReading = Math.min(...last7Readings.map(d => d.reading));
+  const range = maxReading - minReading || 50;
+
+  return (
+    <div style={{ height: '220px', position: 'relative' }}>
+      {/* Y-axis labels */}
+      <div
+        style={{
+          position: 'absolute',
+          left: '0',
+          top: '0',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          fontSize: '12px',
+          color: '#666'
+        }}
+      >
+        <span>{Math.round(maxReading + 20)}</span>
+        <span>{Math.round((maxReading + minReading) / 2)}</span>
+        <span>{Math.round(minReading - 20)}</span>
+      </div>
+
+      {/* Chart container */}
+      <div
+        style={{
+          marginLeft: '40px',
+          height: '100%',
+          position: 'relative',
+          border: '1px solid #e5e7eb',
+          borderRadius: '6px',
+          padding: '10px',
+          background: 'linear-gradient(to bottom,rgb(200, 208, 215), #f3f4f6)'
+        }}
+      >
+        {/* Polyline graph */}
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          width="100%"
+          height="100%"
+          style={{ position: 'absolute', top: 0, left: 0 }}
+        >
+          <polyline
+            points={last7Readings
+              .map((d, i) => {
+                const x = (i / (last7Readings.length - 1)) * 100;
+                const y =
+                  100 - ((d.reading - (minReading - 20)) / (range + 40)) * 100;
+                return `${x},${y}`;
+              })
+              .join(' ')}
+            fill="none"
+            stroke="#4f46e5"
+            strokeWidth="1"
+          />
+
+          {last7Readings.map((d, i) => {
+            const x = (i / (last7Readings.length - 1)) * 100;
+            const y =
+              100 - ((d.reading - (minReading - 20)) / (range + 40)) * 100;
+            return (
+              <circle
+                key={i}
+                cx={x}
+                cy={y}
+                r="1.2"
+                fill={getGlucoseStatus(d.reading).color}
+                stroke="white"
+                strokeWidth="0.3"
+              >
+                <title>
+                  {`Glucose: ${d.reading} on ${new Date(
+                    d.timestamp
+                  ).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}`}
+                </title>
+              </circle>
+            );
+          })}
+        </svg>
+
+        {/* X-axis labels from DB */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '-25px',
+            left: '0',
+            right: '0',
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontSize: '12px',
+            color: '#444'
+          }}
+        >
+          {last7Readings.map((d, i) => (
+            <span key={i}>
+              {new Date(d.timestamp).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric'
+              })}
+            </span>
           ))}
         </div>
       </div>
+    </div>
+  );
+};
+
+
+// Function to render mood bar chart
+ const renderMoodChart = () => {
+  if (moodData.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', color: '#666', padding: '40px' }}>
+        No mood data available. Start tracking your mood to see patterns.
+      </div>
     );
+  }
+
+  const last7DaysData = moodData.slice(0, 7);
+
+  const moodCounts = last7DaysData.reduce((acc, entry) => {
+    const mood = entry.mood.toLowerCase().trim();
+    acc[mood] = (acc[mood] || 0) + 1;
+    return acc;
+  }, {});
+
+  const moodColors = {
+    happy: '#10b981',
+    sad: '#3b82f6',
+    anxious: '#f59e0b',
+    tired: '#6b7280',
+    angry: '#ef4444',
+    calm: '#8b5cf6'
   };
+
+  const maxCount = Math.max(...Object.values(moodCounts));
+
+  return (
+    <div
+      style={{
+        height: '250px',
+        padding: '20px',
+        borderRadius: '5px',
+        background: 'linear-gradient(135deg, #d9e4f5, #f9fafc)',
+        boxShadow: '0px 8px 20px rgba(0,0,0,0.1)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between'
+      }}
+    >
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'end',
+          height: '180px',
+          gap: '16px',
+          justifyContent: 'space-around',
+          paddingTop: '10px'
+        }}
+      >
+        {Object.entries(moodCounts).map(([mood, count]) => (
+          <div
+            key={mood}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              flex: 1,
+              transition: 'transform 0.2s ease',
+              cursor: 'pointer'
+            }}
+            onMouseEnter={e => e.currentTarget.style.transform = "scale(1.05)"}
+            onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
+          >
+            {/* Count Label */}
+            <div
+              style={{
+                fontSize: '14px',
+                fontWeight: '600',
+                marginBottom: '6px',
+                color: '#333'
+              }}
+            >
+              {count}
+            </div>
+
+            {/* Mood Bar */}
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '50px',
+                height: `${(count / maxCount) * 140}px`,
+                background: `linear-gradient(180deg, ${moodColors[mood] || '#6b7280'})`,
+                borderRadius: '10px',
+                minHeight: '20px',
+                boxShadow: '0px 2px 6px rgba(0,0,0,0.1)',
+                transition: 'height 0.3s ease'
+              }}
+            ></div>
+
+            {/* Mood Label */}
+            <div
+              style={{
+                fontSize: '13px',
+                color: '#555',
+                marginTop: '15px',
+                marginBottom: '-25px',
+                textAlign: 'center',
+                fontWeight: '500'
+              }}
+            >
+              {mood.charAt(0).toUpperCase() + mood.slice(1)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 
   // Chat/Interrupt Agent Functions
   const handleChatSubmit = async (e) => {
@@ -501,11 +639,23 @@ function App() {
     setChatMessages(prev => [...prev, { type: 'user', message: userMessage }]);
     
     try {
-      const result = await apiCall('/api/interrupt', 'POST', {
+      // Add a thinking message to show the AI is processing
+      const thinkingIndex = Date.now();
+      setChatMessages(prev => [...prev, { 
+        type: 'assistant', 
+        message: 'Thinking...',
+        isThinking: true,
+        id: thinkingIndex
+      }]);
+      
+      const result = await apiCallWithRetry('/api/interrupt', 'POST', {
         user_id: parseInt(user.id),
         query: userMessage,
         current_context: { active_agent: activeSection }
       });
+      
+      // Remove the thinking message
+      setChatMessages(prev => prev.filter(msg => !(msg.isThinking && msg.id === thinkingIndex)));
       
       if (result.success) {
         setChatMessages(prev => [...prev, { 
@@ -513,29 +663,32 @@ function App() {
           message: result.message,
           suggestion: result.navigation_suggestion 
         }]);
+      } else {
+        setChatMessages(prev => [...prev, { 
+          type: 'assistant', 
+          message: result.message || 'Sorry, I encountered an error. Please try again.' 
+        }]);
       }
     } catch (error) {
+      console.error('Chat error:', error);
+      // Remove the thinking message
+      setChatMessages(prev => prev.filter(msg => !msg.isThinking));
+      
       setChatMessages(prev => [...prev, { 
         type: 'assistant', 
-        message: 'Sorry, I encountered an error. Please try again.' 
+        message: `Sorry, I encountered an error after multiple attempts: ${error.message || 'Unknown error'}. Please try again.` 
       }]);
     }
   };
 
   // Send initial greeting when user enters chat
   useEffect(() => {
-    if (activeSection === 'chat' && chatMessages.length === 0) {
-      const greetingMessage = `Hello ${user.first_name}! 👋 Welcome to your AI Health Assistant.
-
-How can I help you today? I can assist you with:
-• Mood tracking
-• Glucose monitoring
-• Food logging
-• Meal planning
-• General health questions`;
-      setChatMessages([{ type: 'assistant', message: greetingMessage }]);
-    }
-  }, [activeSection, user, chatMessages.length]);
+  if (activeSection === "chat") {
+    setChatMessages([
+      { type: "assistant", message: `Hi ${user.first_name}, I'm your AI Health Assistant. How can I help you today?` }
+    ]);
+  }
+}, [activeSection]);
 
   if (!isAuthenticated) {
     return (
@@ -688,66 +841,131 @@ How can I help you today? I can assist you with:
                 {renderMoodChart()}
               </div>
             </div>
+            
+            {/* Third Row: Empty - Food logs moved to dedicated section */}
+            {/* Food logs are now only visible in the Food Logger section as requested */}
           </>
         )}
 
         {activeSection === 'mood' && (
-          <>
-            <h1>Mood Tracker</h1>
-            <div style={{
-              background: 'white',
-              padding: '24px',
-              borderRadius: '12px',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
-              marginBottom: '24px'
+        <>
+          <div style={{
+            background: '#ffffff',
+            padding: '28px',
+            borderRadius: '16px',
+            boxShadow: '0 8px 20px rgba(0, 0, 0, 0.12)',
+            marginBottom: '24px',
+            maxWidth: '100%',
+            margin: 'auto'
+          }}>
+            <h3 style={{
+              fontSize: '20px',
+              fontWeight: '600',
+              color: '#111827',
+              textAlign: 'center'
             }}>
-              <h3>How are you feeling today?</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '16px', marginTop: '20px' }}>
-                {[
-                  { emoji: '😊', name: 'Happy', color: '#4ade80' },
-                  { emoji: '😢', name: 'Sad', color: '#3b82f6' },
-                  { emoji: '😠', name: 'Angry', color: '#ef4444' },
-                  { emoji: '😌', name: 'Calm', color: '#06b6d4' },
-                  { emoji: '😴', name: 'Tired', color: '#64748b' },
-                  { emoji: '😰', name: 'Anxious', color: '#f97316' }
-                ].map((mood) => (
-                  <button
-                    key={mood.name}
-                    onClick={() => handleMoodSubmit(mood.name)}
-                    disabled={loading}
-                    style={{
-                      padding: '16px',
-                      background: '#f7fafc',
-                      border: '2px solid #e2e8f0',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      textAlign: 'center'
-                    }}
-                  >
-                    <div style={{ fontSize: '24px', marginBottom: '4px' }}>{mood.emoji}</div>
-                    <div>{mood.name}</div>
-                  </button>
-                ))}
+              How are you feeling today?
+
+            </h3>
+            
+            {/* Free text mood input */}
+            <form onSubmit={handleMoodTextInput} style={{ marginBottom: '24px' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
+                  Describe your mood or just tap to express it
+                </label>
+                <textarea
+                  name="moodText"
+                  placeholder="Example: I'm feeling great today after my morning workout!"
+                  rows={2}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '2px solid #e2e8f0',
+                    borderRadius: '8px',
+                    fontSize: '16px',
+                    resize: 'vertical'
+                  }}
+                  disabled={loading}
+                />
               </div>
-            </div>
-            {moodData.length > 0 && (
-              <div style={{ background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
-                <h3>Recent Mood Entries</h3>
-                {moodData.slice(0, 5).map((entry, index) => (
-                  <div key={index} style={{ padding: '12px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>{entry.mood}</span>
-                    <span style={{ color: '#666', fontSize: '14px' }}>{entry.timestamp}</span>
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  padding: '10px 16px',
+                  background: '#667eea',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                {loading ? 'Processing...' : 'Log Mood from Text'}
+              </button>
+            </form>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)', // Forces 3 columns
+              gap: '20px',
+              marginTop: '24px'
+            }}>
+
+              {[
+                { emoji: '😊', name: 'Happy', color: '#4ade80' },
+                { emoji: '😢', name: 'Sad', color: '#3b82f6' },
+                { emoji: '😠', name: 'Angry', color: '#ef4444' },
+                { emoji: '😌', name: 'Calm', color: '#06b6d4' },
+                { emoji: '😴', name: 'Tired', color: '#64748b' },
+                { emoji: '😰', name: 'Anxious', color: '#f97316' }
+              ].map((mood) => (
+                <button
+                  key={mood.name}
+                  onClick={() => handleMoodSubmit(mood.name)}
+                  disabled={loading}
+                  style={{
+                    padding: '18px',
+                    background: `linear-gradient(135deg, ${mood.color}55, ${mood.color}22)`,
+                    border: 'none',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    textAlign: 'center',
+                    boxShadow: `0 4px 12px ${mood.color}33`,
+                    transition: 'transform 0.2s, box-shadow 0.2s',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                >
+                  <div style={{
+                    fontSize: '28px',
+                    marginBottom: '8px',
+                    background: '#fff',
+                    borderRadius: '50%',
+                    padding: '12px',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
+                  }}>
+                    {mood.emoji}
                   </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
+                  <div style={{
+                    fontWeight: '500',
+                    color: '#1f2937'
+                  }}>{mood.name}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
 
         {activeSection === 'glucose' && (
           <>
-            <h1>Glucose Monitor</h1>
             
             {/* Current Status Display */}
             {glucoseData.length > 0 && (
@@ -811,97 +1029,11 @@ How can I help you today? I can assist you with:
                 </div>
               </div>
             )}
-            
-            {/* Manual Entry Option */}
-            <div style={{
-              background: 'white',
-              padding: '24px',
-              borderRadius: '12px',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
-              marginBottom: '24px'
-            }}>
-              <h3>Manual Glucose Entry</h3>
-              <p style={{ color: '#666', marginBottom: '16px' }}>Enter a manual reading if needed:</p>
-              
-              <form onSubmit={handleGlucoseSubmit}>
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'end' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
-                      Glucose Reading (mg/dL)
-                    </label>
-                    <input
-                      type="number"
-                      value={glucoseReading}
-                      onChange={(e) => setGlucoseReading(e.target.value)}
-                      placeholder="Enter reading (e.g., 120)"
-                      min="50"
-                      max="500"
-                      style={{
-                        width: '100%',
-                        padding: '12px',
-                        border: '2px solid #e2e8f0',
-                        borderRadius: '8px',
-                        fontSize: '16px'
-                      }}
-                      disabled={loading}
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={loading || !glucoseReading}
-                    style={{
-                      padding: '12px 24px',
-                      background: '#10b981',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontWeight: '600',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {loading ? 'Logging...' : 'Log Reading'}
-                  </button>
-                </div>
-              </form>
-            </div>
-            
-            {/* Recent Readings */}
-            {glucoseData.length > 0 && (
-              <div style={{ background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
-                <h3>Recent Glucose Readings</h3>
-                {glucoseData.slice(0, 10).map((entry, index) => (
-                  <div key={index} style={{ padding: '12px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div
-                        style={{
-                          width: '12px',
-                          height: '12px',
-                          borderRadius: '50%',
-                          background: getGlucoseStatus(entry.reading).color
-                        }}
-                      ></div>
-                      <span style={{ fontWeight: '500' }}>{entry.reading} mg/dL</span>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        background: getGlucoseStatus(entry.reading).color,
-                        color: 'white'
-                      }}>
-                        {getGlucoseStatus(entry.reading).status}
-                      </span>
-                    </div>
-                    <span style={{ color: '#666', fontSize: '14px' }}>{new Date(entry.timestamp).toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </>
         )}
 
         {activeSection === 'food' && (
           <>
-            <h1>Food Logger</h1>
             <div style={{
               background: 'white',
               padding: '24px',
@@ -956,14 +1088,14 @@ How can I help you today? I can assist you with:
                     <div style={{ fontWeight: '500', marginBottom: '8px', fontSize: '16px' }}>{entry.description || entry.meal_description}</div>
                     
                     {/* Nutrition Information */}
-                    {(entry.nutrition || entry.nutritional_analysis || (entry.carbs !== undefined && entry.protein !== undefined && entry.fat !== undefined)) && (
+                    {(entry.nutrition || entry.nutritional_analysis || (entry.estimated_carbs !== undefined && entry.estimated_protein !== undefined && entry.estimated_fat !== undefined)) && (
                       <div style={{ marginBottom: '12px' }}>
                         <h4 style={{ fontSize: '14px', color: '#667eea', marginBottom: '8px' }}>Nutritional Analysis:</h4>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
                           {/* Calories */}
                           <div style={{ padding: '8px', background: '#fef3c7', borderRadius: '6px', textAlign: 'center' }}>
                             <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#d97706' }}>
-                              {entry.nutrition?.calories || entry.nutritional_analysis?.calories || Math.round((entry.carbs * 4) + (entry.protein * 4) + (entry.fat * 9)) || 'N/A'}
+                              {entry.nutrition?.calories || entry.nutritional_analysis?.calories || Math.round(entry.estimated_calories) || Math.round((entry.estimated_carbs * 4) + (entry.estimated_protein * 4) + (entry.estimated_fat * 9)) || 'N/A'}
                             </div>
                             <div style={{ fontSize: '12px', color: '#92400e' }}>Calories</div>
                           </div>
@@ -971,7 +1103,7 @@ How can I help you today? I can assist you with:
                           {/* Protein */}
                           <div style={{ padding: '8px', background: '#dbeafe', borderRadius: '6px', textAlign: 'center' }}>
                             <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#2563eb' }}>
-                              {entry.nutrition?.protein || entry.nutritional_analysis?.protein || entry.protein || 'N/A'}g
+                              {entry.nutrition?.protein || entry.nutritional_analysis?.protein || entry.estimated_protein || 'N/A'}g
                             </div>
                             <div style={{ fontSize: '12px', color: '#1d4ed8' }}>Protein</div>
                           </div>
@@ -979,7 +1111,7 @@ How can I help you today? I can assist you with:
                           {/* Carbohydrates */}
                           <div style={{ padding: '8px', background: '#dcfce7', borderRadius: '6px', textAlign: 'center' }}>
                             <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a34a' }}>
-                              {entry.nutrition?.carbs || entry.nutritional_analysis?.carbs || entry.nutritional_analysis?.carbohydrates || entry.carbs || 'N/A'}g
+                              {entry.nutrition?.carbs || entry.nutritional_analysis?.carbs || entry.nutritional_analysis?.carbohydrates || entry.estimated_carbs || 'N/A'}g
                             </div>
                             <div style={{ fontSize: '12px', color: '#15803d' }}>Carbs</div>
                           </div>
@@ -987,41 +1119,11 @@ How can I help you today? I can assist you with:
                           {/* Fat */}
                           <div style={{ padding: '8px', background: '#fce7f3', borderRadius: '6px', textAlign: 'center' }}>
                             <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#db2777' }}>
-                              {entry.nutrition?.fat || entry.nutritional_analysis?.fat || entry.fat || 'N/A'}g
+                              {entry.nutrition?.fat || entry.nutritional_analysis?.fat || entry.estimated_fat || 'N/A'}g
                             </div>
                             <div style={{ fontSize: '12px', color: '#be185d' }}>Fat</div>
                           </div>
                         </div>
-                        
-                        {/* Additional nutrition info if available */}
-                        {(entry.nutritional_analysis?.fiber || entry.nutritional_analysis?.sodium) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginTop: '8px' }}>
-                            {entry.nutritional_analysis?.fiber && (
-                              <div style={{ padding: '6px', background: '#f3e8ff', borderRadius: '6px', textAlign: 'center' }}>
-                                <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#7c3aed' }}>
-                                  {entry.nutritional_analysis.fiber}g
-                                </div>
-                                <div style={{ fontSize: '11px', color: '#6d28d9' }}>Fiber</div>
-                              </div>
-                            )}
-                            {entry.nutritional_analysis?.sodium && (
-                              <div style={{ padding: '6px', background: '#fef2f2', borderRadius: '6px', textAlign: 'center' }}>
-                                <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#dc2626' }}>
-                                  {entry.nutritional_analysis.sodium}mg
-                                </div>
-                                <div style={{ fontSize: '11px', color: '#b91c1c' }}>Sodium</div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    {/* Health insights if available */}
-                    {entry.health_insights && (
-                      <div style={{ padding: '10px', background: '#f0f9ff', borderRadius: '6px', marginBottom: '8px' }}>
-                        <div style={{ fontSize: '12px', color: '#0369a1', fontWeight: '500' }}>💡 Health Insights:</div>
-                        <div style={{ fontSize: '13px', color: '#0284c7', marginTop: '4px' }}>{entry.health_insights}</div>
                       </div>
                     )}
                     
@@ -1037,7 +1139,6 @@ How can I help you today? I can assist you with:
 
         {activeSection === 'meal-plan' && (
           <>
-            <h1>AI Meal Planner</h1>
             <div style={{
               background: 'white',
               padding: '24px',
@@ -1045,15 +1146,13 @@ How can I help you today? I can assist you with:
               boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
               marginBottom: '24px'
             }}>
-              <div style={{ padding: '10px', marginBottom: '20px', background: '#f0f9ff', borderRadius: '8px' }}>
-                <small>Debug Info - User: {user?.first_name} (ID: {user?.id}), Dietary: {user?.dietary_preference || 'None'}</small>
-              </div>
               {(() => {
                 try {
                   return (
                     <MealPlanner 
                       userId={parseInt(user?.id || 1)}
                       userContext={{
+                        first_name: user?.first_name || 'User',
                         dietary_preference: user?.dietary_preference || 'No preference specified',
                         medical_conditions: (() => {
                           if (!user?.medical_conditions) return ['None'];
@@ -1064,7 +1163,11 @@ How can I help you today? I can assist you with:
                           return ['None'];
                         })()
                       }}
-                      onComplete={() => setMessage('Meal plan generated successfully!')}
+                      onComplete={() => {
+                        setMessage('Meal plan generated successfully!');
+                        // Refresh data to include the new meal plan
+                        setTimeout(() => loadInitialData(), 1000);
+                      }}
                     />
                   );
                 } catch (error) {
@@ -1073,7 +1176,21 @@ How can I help you today? I can assist you with:
                     <div style={{ padding: '20px', background: '#fed7d7', borderRadius: '8px' }}>
                       <h3>Error Loading Meal Planner</h3>
                       <p>Error: {error.message}</p>
-                      <button onClick={() => window.location.reload()}>Reload Page</button>
+                      <button 
+                        onClick={() => window.location.reload()} 
+                        style={{
+                          padding: '10px 16px',
+                          background: '#667eea',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          marginTop: '10px'
+                        }}
+                      >
+                        Reload Page
+                      </button>
                     </div>
                   );
                 }
@@ -1082,101 +1199,85 @@ How can I help you today? I can assist you with:
           </>
         )}
 
-        {activeSection === 'chat' && (
-          <>
-            <h1>AI Health Assistant</h1>
+        {activeSection === "chat" && (
+        <>
+          <div style={{
+            background: "white",
+            padding: "24px",
+            borderRadius: "12px",
+            boxShadow: "0 4px 20px rgba(0, 0, 0, 0.1)",
+            height: "600px",
+            display: "flex",
+            flexDirection: "column"
+          }}>
+            <h3>Chat with your AI Health Assistant</h3>
             <div style={{
-              background: 'white',
-              padding: '24px',
-              borderRadius: '12px',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
-              height: '600px',
-              display: 'flex',
-              flexDirection: 'column'
+              flex: 1,
+              border: "1px solid #e2e8f0",
+              borderRadius: "8px",
+              padding: "16px",
+              marginTop: "16px",
+              marginBottom: "16px",
+              overflowY: "auto",
+              background: "#f8fafc",
+              display: "flex",
+              flexDirection: "column"
             }}>
-              <h3>Chat with your AI Health Assistant</h3>
-              <div style={{
-                flex: 1,
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                padding: '16px',
-                marginTop: '16px',
-                marginBottom: '16px',
-                overflowY: 'auto',
-                background: '#f8fafc'
-              }}>
-                {chatMessages.length === 0 ? (
-                  <div style={{ color: '#666', fontStyle: 'italic', textAlign: 'center', marginTop: '40px' }}>
-                    Start a conversation! Ask me about your health, get recommendations, or navigate to specific features.
+              {chatMessages.length === 0 ? (
+                <div style={{ color: "#666", fontStyle: "italic", textAlign: "center", marginTop: "40px" }}>
+                  Start a conversation! Ask me about your health, get recommendations, or navigate to specific features.
+                </div>
+              ) : (
+                chatMessages.map((msg, index) => (
+                  <div 
+                    key={index} 
+                    style={msg.type === "user" ? userBubbleStyle : assistantBubbleStyle}
+                  >
+                    <div>{msg.message}</div>
                   </div>
-                ) : (
-                  chatMessages.map((msg, index) => (
-                    <div key={index} style={{
-                      marginBottom: '16px',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      background: msg.type === 'user' ? '#667eea' : 'white',
-                      color: msg.type === 'user' ? 'white' : '#333',
-                      alignSelf: msg.type === 'user' ? 'flex-end' : 'flex-start',
-                      maxWidth: '80%',
-                      marginLeft: msg.type === 'user' ? 'auto' : '0',
-                      marginRight: msg.type === 'user' ? '0' : 'auto'
-                    }}>
-                      <div>{msg.message}</div>
-                      {msg.suggestion && (
-                        <div style={{
-                          marginTop: '8px',
-                          padding: '8px',
-                          background: '#f0f9ff',
-                          borderRadius: '4px',
-                          fontSize: '14px',
-                          color: '#0369a1'
-                        }}>
-                          💡 Suggestion: {msg.suggestion}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-              <form onSubmit={handleChatSubmit} style={{ display: 'flex', gap: '12px' }}>
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder={`Ask me anything, ${user.first_name}...`}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    border: '2px solid #e2e8f0',
-                    borderRadius: '8px',
-                    fontSize: '16px'
-                  }}
-                  disabled={loading}
-                />
-                <button
-                  type="submit"
-                  disabled={loading || !chatInput.trim()}
-                  style={{
-                    padding: '12px 20px',
-                    background: '#10b981',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}
-                >
-                  <Send size={16} />
-                  {loading ? 'Sending...' : 'Send'}
-                </button>
-              </form>
+                ))
+              )}
             </div>
-          </>
-        )}
+
+            {/* Chat input */}
+            <form onSubmit={handleChatSubmit} style={{ display: "flex", gap: "12px" }}>
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder={`Ask me anything, ${user.first_name}...`}
+                style={{
+                  flex: 1,
+                  padding: "12px",
+                  border: "2px solid #e2e8f0",
+                  borderRadius: "8px",
+                  fontSize: "16px"
+                }}
+                disabled={loading}
+              />
+              <button
+                type="submit"
+                disabled={loading || !chatInput.trim()}
+                style={{
+                  padding: "12px 20px",
+                  background: "#10b981",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px"
+                }}
+              >
+                <Send size={16} />
+                {loading ? "Sending..." : "Send"}
+              </button>
+            </form>
+          </div>
+        </>
+      )}
       </div>
     </div>
   );

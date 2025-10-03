@@ -1,342 +1,240 @@
-# agents/agno_workspace/agents/food_intake_agent.py
-
 import sqlite3
-import os
-from google import genai   # ✅ using google-genai SDK
-from typing import Dict, Any, List
 import json
-import re
-from datetime import datetime
+import os
+from typing import Dict, Any
+from agno.agent import Agent
+from agno.db.sqlite import SqliteDb
+from google import genai
+from dotenv import load_dotenv
 
-class FoodIntakeAgent:
-    def __init__(self):
-        self.db_path = os.getenv('DATABASE_PATH', '../../../data/healthcare_data.db')
+# DB path - Use consistent approach with mood_tracker_agent.py
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(CURRENT_DIR)))
+DB_PATH = os.path.join(BASE_DIR, "data", "healthcare_data.db")
 
-        # Initialize Gemini API client using .env key
-        api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY', 'YOUR_GEMINI_API_KEY_PLACEHOLDER')
-        self.client = genai.Client(api_key=api_key)
+# Load API key from environment with explicit path
+env_path = os.path.join(BASE_DIR, '.env')
+load_dotenv(dotenv_path=env_path, override=True)
+GENAI_API_KEY = os.getenv("GOOGLE_API_KEY")  # Use GOOGLE_API_KEY instead of GEMINI_API_KEY
 
-        # pick model
-        self.model_name = "gemini-2.5-flash"
 
-    def get_database_connection(self):
-        """Get database connection"""
-        return sqlite3.connect(self.db_path)
+if not GENAI_API_KEY:
+    raise Exception("GEMINI_API_KEY or GOOGLE_API_KEY not found in .env")
 
-    def analyze_nutrition_with_llm(self, meal_description: str) -> Dict[str, float]:
-        """Use Gemini to analyze nutritional content of meal description"""
-        prompt = f"""
-        Analyze the following meal/food description and estimate the nutritional content. 
-        Provide your response in JSON format with the following fields:
-        - carbs: estimated carbohydrates in grams
-        - protein: estimated protein in grams  
-        - fat: estimated fat in grams
-        - calories: estimated total calories
-        - confidence: confidence level (1-10)
+# Additional check for placeholder values
+if GENAI_API_KEY == 'YOUR_GOOGLE_API_KEY_PLACEHOLDER' or GENAI_API_KEY == 'YOUR_ACTUAL_GOOGLE_API_KEY_HERE' or GENAI_API_KEY == 'your_actual_gemini_api_key_here':
+    raise Exception("Invalid API key: Placeholder value detected. Please update with a valid Google API key.")
 
-        Meal description: "{meal_description}"
+client = genai.Client(api_key=GENAI_API_KEY)
 
-        Please be realistic in your estimates. If the description is vague, make reasonable assumptions for a typical serving.
-        Return only the JSON response, no additional text.
-        """
 
+def analyze_nutrition(meal_description: str) -> Dict[str, Any]:
+    try:
+        prompt = (
+            "Analyze the nutritional content of the following meal and "
+            "provide calories (kcal), protein (g), carbohydrates (g), "
+            "and fat (g) in JSON format with keys: calories, protein, carbohydrates, fat.\n"
+            f"Meal: {meal_description}\n"
+            "IMPORTANT: Respond ONLY with valid JSON in this exact format: "
+            '{"calories": number, "protein": number, "carbohydrates": number, "fat": number}'
+        )
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[prompt]
+        )
+
+        # Check if response is valid
+        if not response.candidates or not response.candidates[0].content or not response.candidates[0].content.parts:
+            raise Exception("Empty response from Gemini API")
+            
+        content = response.candidates[0].content.parts[0].text.strip()
+
+        # Try to extract JSON from the response
+        # Look for JSON object in the response
+        import re
+        
+        # First try to find JSON object with curly braces
+        json_match = re.search(r'\{[^}]+\}', content)
+        if json_match:
+            json_str = json_match.group(0)
+            try:
+                result = json.loads(json_str)
+                # Validate that all required fields are present
+                required_fields = ["calories", "protein", "carbohydrates", "fat"]
+                for field in required_fields:
+                    if field not in result:
+                        result[field] = 0  # Default to 0 if field is missing
+                return result
+            except json.JSONDecodeError:
+                pass  # Continue to default return
+
+        # If that fails, try to parse the entire content as JSON
         try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt
-            )
+            # Remove markdown ```json wrapper if present
+            clean_content = content
+            if clean_content.startswith("```json"):
+                clean_content = clean_content[7:]
+            if clean_content.endswith("```"):
+                clean_content = clean_content[:-3]
+            clean_content = clean_content.strip()
+            
+            result = json.loads(clean_content)
+            # Validate that all required fields are present
+            required_fields = ["calories", "protein", "carbohydrates", "fat"]
+            for field in required_fields:
+                if field not in result:
+                    result[field] = 0  # Default to 0 if field is missing
+            return result
+        except json.JSONDecodeError as je:
+            print(f"JSON parsing error: {je}")
+            print(f"Raw content: {content}")
+            # Return default values instead of None
+            return {
+                "calories": 0,
+                "protein": 0,
+                "carbohydrates": 0,
+                "fat": 0
+            }
 
-            response_text = response.text.strip()
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-
-            if json_match:
-                nutrition_data = json.loads(json_match.group(0))
-                # Ensure all values are valid floats
-                return {
-                    'carbs': float(nutrition_data.get('carbs', 0)) if nutrition_data.get('carbs') is not None else 0.0,
-                    'protein': float(nutrition_data.get('protein', 0)) if nutrition_data.get('protein') is not None else 0.0,
-                    'fat': float(nutrition_data.get('fat', 0)) if nutrition_data.get('fat') is not None else 0.0,
-                    'calories': float(nutrition_data.get('calories', 0)) if nutrition_data.get('calories') is not None else 0.0,
-                    'confidence': float(nutrition_data.get('confidence', 5)) if nutrition_data.get('confidence') is not None else 5.0
-                }
-            else:
-                return self.simple_nutrition_estimation(meal_description)
-
-        except Exception as e:
-            print(f"LLM nutrition analysis error: {e}")
-            return self.simple_nutrition_estimation(meal_description)
-    
-    def simple_nutrition_estimation(self, meal_description: str) -> Dict[str, float]:
-        """Simple keyword-based nutrition estimation as fallback"""
-        description_lower = meal_description.lower()
-        
-        # Basic estimates based on common foods
-        carbs = 30.0  # default
-        protein = 15.0  # default
-        fat = 10.0  # default
-        
-        # Carb-rich foods
-        carb_foods = ['rice', 'bread', 'pasta', 'potato', 'oats', 'cereal', 'fruit', 'sugar']
-        for food in carb_foods:
-            if food in description_lower:
-                carbs += 20.0
-        
-        # Protein-rich foods
-        protein_foods = ['chicken', 'beef', 'fish', 'egg', 'tofu', 'beans', 'lentil', 'protein']
-        for food in protein_foods:
-            if food in description_lower:
-                protein += 20.0
-        
-        # Fat-rich foods
-        fat_foods = ['oil', 'butter', 'nuts', 'cheese', 'avocado', 'fried']
-        for food in fat_foods:
-            if food in description_lower:
-                fat += 15.0
-        
-        calories = (carbs * 4.0) + (protein * 4.0) + (fat * 9.0)
-        
+    except Exception as e:
+        print("Google API error:", e)
+        # Return default values instead of None to prevent null outputs
         return {
-            'carbs': float(carbs),
-            'protein': float(protein),
-            'fat': float(fat),
-            'calories': float(calories),
-            'confidence': 5.0
+            "calories": 0,
+            "protein": 0,
+            "carbohydrates": 0,
+            "fat": 0
         }
-    
-    def log_food_intake(self, user_id: int, meal_description: str, nutrition_data: Dict[str, float]) -> bool:
-        """Log food intake to database"""
-        try:
-            conn = self.get_database_connection()
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO food_logs (user_id, meal_description, estimated_calories,
-                                     estimated_carbs, estimated_protein, estimated_fat)
+
+
+def food_intake_agent(user_id: int, meal_description: str = "", action: str = "log") -> Dict[str, Any]:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    try:
+        if action == "log":
+            if not meal_description:
+                return {
+                    "success": False,
+                    "message": "Meal description is required for logging",
+                    "meal_description": None,
+                    "nutrition_analysis": None,
+                }
+
+            nutrition_analysis = analyze_nutrition(meal_description)
+            print(f"Nutrition analysis result: {nutrition_analysis}")
+
+            # Ensure all nutrition values are valid numbers
+            calories = nutrition_analysis.get("calories", 0)
+            carbs = nutrition_analysis.get("carbohydrates", 0)
+            protein = nutrition_analysis.get("protein", 0)
+            fat = nutrition_analysis.get("fat", 0)
+            
+            # Convert to float or int if needed, default to 0 if conversion fails
+            try:
+                calories = float(calories) if calories is not None else 0
+            except (ValueError, TypeError):
+                calories = 0
+                
+            try:
+                carbs = float(carbs) if carbs is not None else 0
+            except (ValueError, TypeError):
+                carbs = 0
+                
+            try:
+                protein = float(protein) if protein is not None else 0
+            except (ValueError, TypeError):
+                protein = 0
+                
+            try:
+                fat = float(fat) if fat is not None else 0
+            except (ValueError, TypeError):
+                fat = 0
+
+            # Insert into food_logs
+            cur.execute("""
+                INSERT INTO food_logs (user_id, meal_description, estimated_calories, estimated_carbs, estimated_protein, estimated_fat)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (user_id, meal_description, nutrition_data['calories'],
-                  nutrition_data['carbs'], nutrition_data['protein'], nutrition_data['fat']))
+            """, (
+                user_id,
+                meal_description,
+                calories,
+                carbs,
+                protein,
+                fat
+            ))
             conn.commit()
-            conn.close()
-            return True
-        except Exception as e:
-            print(f"Database error logging food: {e}")
-            return False
-    
-    def get_food_history(self, user_id: int, days: int = 7) -> List[Dict[str, Any]]:
-        """Get food intake history for specified number of days"""
-        try:
-            conn = self.get_database_connection()
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT meal_description, estimated_calories, estimated_carbs, estimated_protein, 
-                       estimated_fat, timestamp FROM food_logs 
-                WHERE user_id = ? AND timestamp >= datetime('now', '-{} days')
-                ORDER BY timestamp DESC
-            '''.format(days), (user_id,))
-            
-            results = cursor.fetchall()
-            conn.close()
-            
-            return [
-                {
-                    'meal_description': result[0],
-                    'calories': result[1],
-                    'carbs': result[2],
-                    'protein': result[3],
-                    'fat': result[4],
-                    'timestamp': result[5]
-                }
-                for result in results
-            ]
-        except Exception as e:
-            print(f"Database error retrieving food history: {e}")
-            return []
-    
-    def calculate_nutrition_stats(self, food_history: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Calculate nutrition statistics"""
-        if not food_history:
-            return {
-                'total_entries': 0,
-                'daily_averages': {
-                    'calories': 0,
-                    'carbs': 0,
-                    'protein': 0,
-                    'fat': 0
-                }
-            }
-        
-        total_calories = sum(entry['calories'] for entry in food_history)
-        total_carbs = sum(entry['carbs'] for entry in food_history)
-        total_protein = sum(entry['protein'] for entry in food_history)
-        total_fat = sum(entry['fat'] for entry in food_history)
-        
-        # Estimate days covered (rough approximation)
-        days_covered = max(1, len(food_history) // 3)  # Assume ~3 meals per day
-        
-        return {
-            'total_entries': len(food_history),
-            'days_covered': days_covered,
-            'daily_averages': {
-                'calories': round(total_calories / days_covered, 1),
-                'carbs': round(total_carbs / days_covered, 1),
-                'protein': round(total_protein / days_covered, 1),
-                'fat': round(total_fat / days_covered, 1)
-            },
-            'totals': {
-                'calories': round(total_calories, 1),
-                'carbs': round(total_carbs, 1),
-                'protein': round(total_protein, 1),
-                'fat': round(total_fat, 1)
-            }
-        }
-    
-    def process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """Main processing function"""
-        user_id = inputs.get('user_id')
-        meal_description = inputs.get('meal_description')
-        action = inputs.get('action', 'log')  # 'log' or 'get_stats'
-        
-        if not user_id:
-            return {
-                'success': False,
-                'message': 'User ID is required',
-                'error': 'missing_user_id'
-            }
-        
-        if action == 'log':
-            if not meal_description or not meal_description.strip():
-                return {
-                    'success': False,
-                    'message': 'Please describe what you ate or drank',
-                    'error': 'missing_meal_description'
-                }
-            
-            # Analyze nutrition content using LLM
-            nutrition_data = self.analyze_nutrition_with_llm(meal_description)
-            
-            # Log to database
-            success = self.log_food_intake(user_id, meal_description, nutrition_data)
-            if not success:
-                return {
-                    'success': False,
-                    'message': 'Failed to log food intake. Please try again.',
-                    'error': 'database_error'
-                }
-            
-            return {
-                'success': True,
-                'message': self.generate_food_response(meal_description, nutrition_data),
-                'meal_description': meal_description,
-                'nutrition_analysis': nutrition_data,
-                'recommendations': self.get_nutrition_recommendations(nutrition_data)
-            }
-        
-        elif action == 'get_stats':
-            food_history = self.get_food_history(user_id)
-            nutrition_stats = self.calculate_nutrition_stats(food_history)
-            
-            return {
-                'success': True,
-                'message': self.generate_nutrition_summary(nutrition_stats),
-                'nutrition_stats': nutrition_stats,
-                'recent_meals': food_history[:10]  # Last 10 meals
-            }
-        
-        else:
-            return {
-                'success': False,
-                'message': 'Invalid action. Use "log" or "get_stats".',
-                'error': 'invalid_action'
-            }
-    
-    def generate_food_response(self, meal_description: str, nutrition_data: Dict[str, float]) -> str:
-        """Generate response after logging food"""
-        confidence = nutrition_data.get('confidence', 5)
-        
-        response = f"✅ Logged: {meal_description}\n\n"
-        response += f"📊 Estimated nutrition:\n"
-        response += f"• Calories: {nutrition_data['calories']:.0f}\n"
-        response += f"• Carbs: {nutrition_data['carbs']:.1f}g\n"
-        response += f"• Protein: {nutrition_data['protein']:.1f}g\n"
-        response += f"• Fat: {nutrition_data['fat']:.1f}g\n"
-        
-        if confidence < 6:
-            response += f"\n💡 Note: This is an estimate based on your description. For more accurate tracking, try to include portion sizes!"
-        
-        return response
-    
-    def get_nutrition_recommendations(self, nutrition_data: Dict[str, float]) -> List[str]:
-        """Get recommendations based on nutrition analysis"""
-        recommendations = []
-        
-        carbs = nutrition_data['carbs']
-        protein = nutrition_data['protein']
-        fat = nutrition_data['fat']
-        calories = nutrition_data['calories']
-        
-        # Carb recommendations
-        if carbs > 60:
-            recommendations.append("High carb content - consider pairing with protein for better blood sugar control")
-        elif carbs < 15:
-            recommendations.append("Low carb meal - great for blood sugar stability")
-        
-        # Protein recommendations
-        if protein > 25:
-            recommendations.append("Excellent protein content - great for muscle health and satiety")
-        elif protein < 10:
-            recommendations.append("Consider adding more protein to help with satiety and blood sugar control")
-        
-        # Calorie recommendations
-        if calories > 600:
-            recommendations.append("This is a substantial meal - consider lighter options for your next eating occasion")
-        elif calories < 200:
-            recommendations.append("Light meal - you might want to have a healthy snack later if needed")
-        
-        if not recommendations:
-            recommendations.append("Balanced meal - keep up the good work!")
-        
-        return recommendations
-    
-    def generate_nutrition_summary(self, stats: Dict[str, Any]) -> str:
-        """Generate nutrition summary message"""
-        if stats['total_entries'] == 0:
-            return "No food entries logged yet. Start tracking to see your nutrition patterns!"
-        
-        daily_avg = stats['daily_averages']
-        days_covered = stats['days_covered']
-        
-        summary = f"📊 Your nutrition summary over the last {days_covered} days:\n\n"
-        summary += f"• Daily average calories: {daily_avg['calories']:.0f}\n"
-        summary += f"• Daily average carbs: {daily_avg['carbs']:.1f}g\n"
-        summary += f"• Daily average protein: {daily_avg['protein']:.1f}g\n"
-        summary += f"• Daily average fat: {daily_avg['fat']:.1f}g\n"
-        summary += f"• Total meals logged: {stats['total_entries']}\n\n"
-        
-        # Add recommendations based on averages
-        if daily_avg['protein'] < 50:
-            summary += "💡 Consider increasing protein intake for better satiety and muscle health.\n"
-        if daily_avg['calories'] > 2500:
-            summary += "💡 Your calorie intake is quite high - consider portion control strategies.\n"
-        elif daily_avg['calories'] < 1200:
-            summary += "💡 Your calorie intake might be too low - ensure you're eating enough for your needs.\n"
-        else:
-            summary += "✅ Your nutrition tracking shows good awareness of your eating patterns!\n"
-        
-        return summary
+            print("Database commit successful")
 
-# Agent schema for Agno
+            # Verify the insertion was successful
+            cur.execute("SELECT last_insert_rowid()")
+            inserted_id = cur.fetchone()[0]
+            print(f"Successfully inserted food log with ID: {inserted_id}")
+
+            return {
+                "success": True,
+                "message": "Meal logged successfully with nutritional analysis.",
+                "meal_description": meal_description,
+                "nutrition_analysis": nutrition_analysis,
+            }
+
+        elif action == "get_stats":
+            cur.execute("""
+                SELECT meal_description, estimated_calories, estimated_carbs, estimated_protein, estimated_fat, timestamp
+                FROM food_logs WHERE user_id=?
+                ORDER BY timestamp DESC
+            """, (user_id,))
+            rows = cur.fetchall()
+            print(f"Retrieved {len(rows)} food logs for user {user_id}")
+
+            return {
+                "success": True,
+                "message": f"Retrieved {len(rows)} meals for user {user_id}.",
+                "meal_description": None,
+                "nutrition_analysis": [dict(
+                    meal_description=row[0],
+                    calories=row[1],
+                    carbohydrates=row[2],
+                    protein=row[3],
+                    fat=row[4],
+                    timestamp=row[5]
+                ) for row in rows],
+            }
+
+        return {
+            "success": False,
+            "message": "Invalid action",
+            "meal_description": None,
+            "nutrition_analysis": None,
+        }
+
+    except Exception as e:
+        error_msg = f"Error in food_intake_agent: {str(e)}"
+        print(error_msg)
+        import traceback
+        traceback.print_exc()
+        conn.rollback()
+        return {
+            "success": False,
+            "message": error_msg,
+            "meal_description": None,
+            "nutrition_analysis": None,
+        }
+    finally:
+        conn.close()
+
+
+# Agent Schema
 AGENT_SCHEMA = {
     "name": "food_intake_agent",
     "version": "1.0.0",
     "description": "Records meals/snacks and estimates nutritional content",
     "inputs": {
-        "user_id": {
-            "type": "integer",
-            "description": "User ID",
-            "required": True
-        },
+        "user_id": {"type": "integer", "description": "User ID", "required": True},
         "meal_description": {
             "type": "string",
-            "description": "Description of the meal or snack",
+            "description": "Description of the meal consumed",
             "required": False
         },
         "action": {
@@ -347,25 +245,33 @@ AGENT_SCHEMA = {
         }
     },
     "outputs": {
-        "success": {
-            "type": "boolean",
-            "description": "Whether the operation was successful"
-        },
-        "message": {
-            "type": "string",
-            "description": "Response message"
-        },
-        "meal_description": {
-            "type": "string",
-            "description": "The meal that was logged"
-        },
-        "nutrition_analysis": {
-            "type": "object",
-            "description": "Nutritional analysis of the meal"
-        },
-        "recommendations": {
-            "type": "array",
-            "description": "Nutrition recommendations"
-        }
+        "success": {"type": "boolean", "description": "Whether the operation was successful"},
+        "message": {"type": "string", "description": "Response message"},
+        "meal_description": {"type": "string", "description": "The meal that was logged"},
+        "nutrition_analysis": {"type": "object", "description": "Nutritional analysis of the meal"}
     }
 }
+
+# Register Agent
+db = SqliteDb(db_file=DB_PATH)
+food_agent = Agent(db=db, tools=[])
+
+# Register tool with consistent naming
+food_agent.tools.append({
+    "name": "food_intake",
+    "description": "Records meals/snacks and estimates nutritional content",
+    "func": food_intake_agent
+})
+
+
+# Helper to run tool
+def run_tool(agent: Agent, tool_name: str, **kwargs):
+    for tool in agent.tools:
+        if tool["name"] == tool_name:
+            return tool["func"](**kwargs)
+    return {"success": False, "message": f"Tool {tool_name} not found", "meal_description": None, "nutrition_analysis": None}
+
+
+# Test
+if __name__ == "__main__":
+    print(run_tool(food_agent, "food_intake", user_id=1, meal_description="Grilled chicken sandwich with lettuce and tomato"))

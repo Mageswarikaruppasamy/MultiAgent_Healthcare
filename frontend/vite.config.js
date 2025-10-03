@@ -5,14 +5,9 @@ import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [react()],
-  esbuild: {
-    loader: 'jsx',
-    include: /src.*\.[jt]sx?$/,
-    exclude: []
-  },
   server: {
     port: 3000,
-    host: '0.0.0.0',
+    host: 'localhost', // Changed from '0.0.0.0' to 'localhost' for local development
     open: true,
     cors: true,
     proxy: {
@@ -52,11 +47,6 @@ export default defineConfig({
     global: 'globalThis',
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'axios', 'lucide-react'],
-    esbuildOptions: {
-      loader: {
-        '.js': 'jsx',
-      },
-    },
+    include: ['react', 'react-dom', 'axios', 'lucide-react']
   }
 })

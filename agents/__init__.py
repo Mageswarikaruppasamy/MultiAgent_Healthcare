@@ -16,83 +16,8 @@ It includes six specialized agents for healthcare tracking and management:
 __version__ = "1.0.0"
 __author__ = "Healthcare Multi-Agent Demo Team"
 
-# Import agent classes from agno_workspace
-try:
-    from .agno_workspace.agents.greeting_agent import GreetingAgent
-    from .agno_workspace.agents.mood_tracker_agent import MoodTrackerAgent
-    from .agno_workspace.agents.cgm_agent import CGMAgent
-    from .agno_workspace.agents.food_intake_agent import FoodIntakeAgent
-    from .agno_workspace.agents.meal_planner_agent import MealPlannerAgent
-    from .agno_workspace.agents.interrupt_agent import InterruptAgent
-    
-    __all__ = [
-        'GreetingAgent',
-        'MoodTrackerAgent', 
-        'CGMAgent',
-        'FoodIntakeAgent',
-        'MealPlannerAgent',
-        'InterruptAgent'
-    ]
-    
-except ImportError as e:
-    print(f"Warning: Could not import agents from agno_workspace: {e}")
-    print("Make sure the agno_workspace is properly initialized")
-    
-    # Fallback - define empty classes for development
-    class GreetingAgent:
-        """Placeholder for GreetingAgent"""
-        def __init__(self):
-            pass
-        def process(self, inputs):
-            return {"success": False, "message": "Agent not properly initialized"}
-    
-    class MoodTrackerAgent:
-        """Placeholder for MoodTrackerAgent"""
-        def __init__(self):
-            self.mood_values = {
-                'happy': 5, 'excited': 5, 'energetic': 4, 'calm': 4,
-                'content': 3, 'neutral': 3, 'tired': 2, 'anxious': 2,
-                'stressed': 1, 'sad': 1, 'angry': 1
-            }
-        def process(self, inputs):
-            return {"success": False, "message": "Agent not properly initialized"}
-    
-    class CGMAgent:
-        """Placeholder for CGMAgent"""
-        def __init__(self):
-            pass
-        def process(self, inputs):
-            return {"success": False, "message": "Agent not properly initialized"}
-    
-    class FoodIntakeAgent:
-        """Placeholder for FoodIntakeAgent"""
-        def __init__(self):
-            pass
-        def process(self, inputs):
-            return {"success": False, "message": "Agent not properly initialized"}
-    
-    class MealPlannerAgent:
-        """Placeholder for MealPlannerAgent"""
-        def __init__(self):
-            pass
-        def process(self, inputs):
-            return {"success": False, "message": "Agent not properly initialized"}
-    
-    class InterruptAgent:
-        """Placeholder for InterruptAgent"""
-        def __init__(self):
-            pass
-        def process(self, inputs):
-            return {"success": False, "message": "Agent not properly initialized"}
-    
-    __all__ = [
-        'GreetingAgent',
-        'MoodTrackerAgent', 
-        'CGMAgent',
-        'FoodIntakeAgent',
-        'MealPlannerAgent',
-        'InterruptAgent'
-    ]
+# Simple imports without trying to import from agno_workspace
+__all__ = []
 
 # Agent configuration
 AGENT_CONFIG = {

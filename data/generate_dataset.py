@@ -7,7 +7,7 @@ import json
 fake = Faker()
 
 # Configuration
-CITIES = ["New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia", "San Antonio", "San Diego", "Dallas", "San Jose"]
+CITIES = ["Chennai", "Coimbatore", "Bangalore", "Delhi", "Assam", "Mumbai", "Hyderabad", "Thoothukudi", "Kerala", "Goa"]
 DIETARY_PREFERENCES = ["vegetarian", "non-vegetarian", "vegan"]
 MEDICAL_CONDITIONS = [
     "Type 2 Diabetes", "Hypertension", "High Cholesterol", "Obesity", 
@@ -33,8 +33,6 @@ def create_database():
             dietary_preference TEXT NOT NULL,
             medical_conditions TEXT NOT NULL,
             physical_limitations TEXT NOT NULL,
-            baseline_glucose_min INTEGER DEFAULT 80,
-            baseline_glucose_max INTEGER DEFAULT 120,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -90,11 +88,12 @@ def create_database():
     
     conn.commit()
     return conn
+
+
 def generate_user_data():
     """Generate synthetic user data with fixed distribution"""
     users = []
     
-    # Desired distribution
     diet_counts = {
         "vegetarian": 33,
         "non-vegetarian": 33,
@@ -103,12 +102,10 @@ def generate_user_data():
     
     for diet, count in diet_counts.items():
         for _ in range(count):
-            # Basic info
             first_name = fake.first_name()
             last_name = fake.last_name()
             city = random.choice(CITIES)
             
-            # Medical conditions (can have multiple)
             num_conditions = random.choices([0, 1, 2, 3], weights=[20, 50, 25, 5])[0]
             if num_conditions == 0:
                 medical_conditions = ["None"]
@@ -118,7 +115,6 @@ def generate_user_data():
                     num_conditions
                 )
             
-            # Physical limitations
             num_limitations = random.choices([0, 1, 2], weights=[60, 30, 10])[0]
             if num_limitations == 0:
                 physical_limitations = ["None"]
@@ -128,25 +124,17 @@ def generate_user_data():
                     num_limitations
                 )
             
-            # Adjust glucose ranges based on medical conditions
-            baseline_min, baseline_max = 80, 120
-            if "Type 2 Diabetes" in medical_conditions:
-                baseline_min, baseline_max = 100, 180
-            elif "Hypertension" in medical_conditions:
-                baseline_min, baseline_max = 85, 135
-            
             users.append({
                 'first_name': first_name,
                 'last_name': last_name,
                 'city': city,
                 'dietary_preference': diet,
                 'medical_conditions': json.dumps(medical_conditions),
-                'physical_limitations': json.dumps(physical_limitations),
-                'baseline_glucose_min': baseline_min,
-                'baseline_glucose_max': baseline_max
+                'physical_limitations': json.dumps(physical_limitations)
             })
     
     return users
+
 
 def insert_users(conn, users):
     """Insert users into database"""
@@ -155,66 +143,48 @@ def insert_users(conn, users):
     for user in users:
         cursor.execute('''
             INSERT INTO users (first_name, last_name, city, dietary_preference, 
-                             medical_conditions, physical_limitations, 
-                             baseline_glucose_min, baseline_glucose_max)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                               medical_conditions, physical_limitations)
+            VALUES (?, ?, ?, ?, ?, ?)
         ''', (
             user['first_name'], user['last_name'], user['city'],
             user['dietary_preference'], user['medical_conditions'],
-            user['physical_limitations'], user['baseline_glucose_min'],
-            user['baseline_glucose_max']
+            user['physical_limitations']
         ))
     
     conn.commit()
 
+
 def generate_sample_data(conn):
-    """Generate sample mood and CGM data for testing"""
+    """Generate realistic mood and CGM data for all users"""
     cursor = conn.cursor()
     
-    # Get all user IDs
     cursor.execute('SELECT id FROM users')
     user_ids = [row[0] for row in cursor.fetchall()]
     
     moods = ["happy", "sad", "tired", "anxious", "calm", "angry"]
-    
-    # Generate sample mood logs (last 7 days)
-    for user_id in user_ids[:10]:  # Only for first 10 users
+
+    for user_id in user_ids:
         for day in range(7):
             mood = random.choice(moods)
             cursor.execute('''
                 INSERT INTO mood_logs (user_id, mood, timestamp)
                 VALUES (?, ?, datetime('now', '-{} days'))
             '''.format(day), (user_id, mood))
-    
-    # Generate sample CGM readings
-    for user_id in user_ids[:10]:
-        # Get user's baseline glucose range
-        cursor.execute('SELECT baseline_glucose_min, baseline_glucose_max FROM users WHERE id = ?', (user_id,))
-        min_glucose, max_glucose = cursor.fetchone()
-        
-        # Generate readings for last 7 days (3 readings per day)
-        for day in range(7):
-            for reading in range(3):
-                # Add some variation around baseline
-                glucose = random.randint(
-                    max(80, min_glucose - 20),
-                    min(300, max_glucose + 40)
-                )
-                alert_flag = glucose < 80 or glucose > 300
-                
-                rand_hour = random.randint(0, 23)
-                rand_min = random.randint(0, 59)
+            
+            glucose = random.randint(70, 200)
+            alert_flag = glucose < 80 or glucose > 180
+            rand_hour = random.randint(6, 22)
+            rand_min = random.randint(0, 59)
 
-                cursor.execute('''
-                    INSERT INTO cgm_readings (user_id, glucose_reading, alert_flag, timestamp)
-                    VALUES (?, ?, ?, datetime('now', '-{} days', 'start of day', '+{} hours', '+{} minutes'))
-                '''.format(day, rand_hour, rand_min), (user_id, glucose, alert_flag))
+            cursor.execute('''
+                INSERT INTO cgm_readings (user_id, glucose_reading, alert_flag, timestamp)
+                VALUES (?, ?, ?, datetime('now', '-{} days', 'start of day', '+{} hours', '+{} minutes'))
+            '''.format(day, rand_hour, rand_min), (user_id, glucose, alert_flag))
 
     conn.commit()
 
 
 def reset_database(conn):
-    """Drop all tables to reset IDs"""
     cursor = conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS users")
     cursor.execute("DROP TABLE IF EXISTS mood_logs")
@@ -223,15 +193,14 @@ def reset_database(conn):
     cursor.execute("DROP TABLE IF EXISTS meal_plans")
     conn.commit()
 
+
 def main():
     print("Creating database and tables...")
     conn = sqlite3.connect('healthcare_data.db')
 
-    # 🔥 Reset DB (drop all tables)
     print("Resetting database...")
     reset_database(conn)
 
-    # Recreate tables
     create_database()
 
     print("Generating synthetic user data...")
@@ -243,7 +212,6 @@ def main():
     print("Generating sample data...")
     generate_sample_data(conn)
     
-    # Verify
     cursor = conn.cursor()
     cursor.execute('SELECT COUNT(*) FROM users')
     user_count = cursor.fetchone()[0]
@@ -262,6 +230,7 @@ def main():
         print(f"   {diet}: {count} users")
     
     conn.close()
+
 
 if __name__ == "__main__":
     main()
