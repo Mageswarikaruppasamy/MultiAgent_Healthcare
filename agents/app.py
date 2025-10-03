@@ -27,18 +27,21 @@ print(f"🔍 Loaded GOOGLE_API_KEY: {'<hidden>' if google_key else 'None'}")
 print(f"🔍 GOOGLE_API_KEY length: {len(google_key) if google_key else 0}")
 
 # Explicitly handle API key conflicts
-# Unset GOOGLE_API_KEY if GEMINI_API_KEY is set to avoid conflicts
-if gemini_key and gemini_key != 'YOUR_GEMINI_API_KEY_PLACEHOLDER' and gemini_key.strip() != '':
-    if 'GOOGLE_API_KEY' in os.environ:
-        del os.environ['GOOGLE_API_KEY']
-        print("⚠️ Unset GOOGLE_API_KEY to avoid conflicts with GEMINI_API_KEY")
-    print("🔑 Using GEMINI_API_KEY for authentication")
-elif google_key and google_key != 'YOUR_GOOGLE_API_KEY_PLACEHOLDER' and google_key.strip() != '':
-    # If only GOOGLE_API_KEY is set, that's fine
+# Use GOOGLE_API_KEY as primary, fallback to GEMINI_API_KEY
+GENAI_API_KEY = None
+if google_key and google_key not in ['YOUR_GOOGLE_API_KEY_PLACEHOLDER', 'YOUR_ACTUAL_GOOGLE_API_KEY_HERE', 'your_actual_gemini_api_key_here']:
+    GENAI_API_KEY = google_key
     print("🔑 Using GOOGLE_API_KEY for authentication")
-    gemini_key = google_key  # Use GOOGLE_API_KEY as the gemini key
+elif gemini_key and gemini_key not in ['YOUR_GEMINI_API_KEY_PLACEHOLDER', 'YOUR_ACTUAL_GOOGLE_API_KEY_HERE', 'your_actual_gemini_api_key_here']:
+    GENAI_API_KEY = gemini_key
+    print("🔑 Using GEMINI_API_KEY for authentication")
 else:
     print("⚠️ No valid API key found. LLM features will use fallback mechanisms.")
+
+# Set the API key in environment for agents to use
+if GENAI_API_KEY:
+    os.environ['GOOGLE_API_KEY'] = GENAI_API_KEY
+    os.environ['GEMINI_API_KEY'] = GENAI_API_KEY
 
 # Set DATABASE_PATH environment variable to point to data directory
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

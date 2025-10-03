@@ -5,7 +5,7 @@ A personalized healthcare application built with multi-agent architecture using 
 ## 🏗️ Architecture
 
 - **Backend**: FastAPI with Agno multi-agent framework
-- **Frontend**: React with AG-UI  
+- **Frontend**: React with AG-UI
 - **AI**: Google Gemini API for intelligent responses
 - **Database**: SQLite for data persistence
 - **Deployment**: Docker containerization
@@ -18,7 +18,7 @@ A personalized healthcare application built with multi-agent architecture using 
 - **CGM Agent**: Glucose readings with intelligent alerts
 - **Food Intake Agent**: Meal logging with AI nutrition analysis
 - **Meal Planner Agent**: Personalized meal recommendations
-- **Interrupt Agent**: General Q&A and help system
+- **Interrupt Agent**: General Q&A, help system, and health score calculation
 
 ### User Interface
 - **Dashboard**: Comprehensive health overview with charts

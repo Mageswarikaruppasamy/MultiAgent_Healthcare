@@ -1,10 +1,10 @@
 // frontend/src/App.js
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { Heart, User, Activity, MessageSquare, Utensils, Plus, Send, TrendingUp } from 'lucide-react';
 import MealPlanner from './components/Mealplanner.jsx';
 
-// Simple inline CSS
+// Add CSS styles for animations
 const styles = {
   app: {
     minHeight: '100vh',
@@ -81,24 +81,42 @@ const styles = {
   }
 };
 
+// Add CSS for pulse animation
+const pulseKeyframes = `
+  @keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+  }
+  
+  @keyframes gradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+`;
+
 // Styles for bubbles
 const userBubbleStyle = {
-  background: "#2563eb",   // blue
+  background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
   color: "white",
   alignSelf: "flex-end",
-  borderRadius: "12px 12px 0 12px",
-  padding: "12px",
-  maxWidth: "70%",
+  borderRadius: "18px 18px 4px 18px",
+  padding: "12px 16px",
+  maxWidth: "75%",
+  boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
   marginBottom: "12px"
 };
 
 const assistantBubbleStyle = {
-  background: "#f1f5f9",   // light grey
-  color: "#111827",
+  background: "white",
+  color: "#1e293b",
   alignSelf: "flex-start",
-  borderRadius: "12px 12px 12px 0",
-  padding: "12px",
-  maxWidth: "70%",
+  borderRadius: "18px 18px 18px 4px",
+  padding: "12px 16px",
+  maxWidth: "75%",
+  boxShadow: "0 4px 6px rgba(0, 0, 0, 0.05)",
+  border: "1px solid #e2e8f0",
   marginBottom: "12px"
 };
 
@@ -108,6 +126,11 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [activeSection, setActiveSection] = useState('dashboard');
+  
+  // Agent-specific loading states
+  const [foodLoading, setFoodLoading] = useState(false);
+  const [moodLoading, setMoodLoading] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
   
   // Agent-specific states
   const [moodData, setMoodData] = useState([]);
@@ -120,6 +143,13 @@ function App() {
   // Form states
   const [glucoseReading, setGlucoseReading] = useState('');
   const [foodDescription, setFoodDescription] = useState('');
+
+  // Refs to track current message values
+  const messageRef = useRef(message);
+  
+  useEffect(() => {
+    messageRef.current = message;
+  }, [message]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -160,7 +190,7 @@ function App() {
     setActiveSection('dashboard');
   };
 
-  // API helper function with retry logic
+  // API helper function with retry logic and better error handling
   const apiCallWithRetry = async (endpoint, method = 'GET', data = null, maxRetries = 2) => {
     let lastError;
     
@@ -179,6 +209,21 @@ function App() {
       } catch (error) {
         lastError = error;
         console.error(`API call failed for ${endpoint} (attempt ${i + 1}/${maxRetries + 1}):`, error);
+        
+        // Handle timeout specifically
+        if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+          console.warn(`Timeout occurred for ${endpoint}. This might be expected for LLM calls.`);
+          // For timeout errors, we might want to retry with a longer timeout for LLM calls
+          if (endpoint.includes('interrupt') || endpoint.includes('food') || endpoint.includes('mood')) {
+            // Increase timeout for subsequent retries of LLM-heavy endpoints
+            // This is handled by the axios config timeout, but we log it for visibility
+          }
+        }
+        
+        // Handle network errors
+        if (error.message === 'Network Error') {
+          console.warn(`Network error for ${endpoint}. This could be due to server not running or CORS issues.`);
+        }
         
         // Don't retry on client errors (4xx) or if it's the last attempt
         if ((error.response && error.response.status >= 400 && error.response.status < 500) || i === maxRetries) {
@@ -215,7 +260,7 @@ function App() {
   const loadInitialData = useCallback(async () => {
     try {
       // Load mood stats
-      const moodResult = await apiCallWithRetry('/api/mood', 'POST', {
+      const moodResult = await apiCall('/api/mood', 'POST', {
         user_id: parseInt(user.id),
         action: 'get_stats'
       });
@@ -277,7 +322,21 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to load initial data:', error);
-      setMessage('Failed to load health data after multiple attempts. Please try refreshing the page.');
+      
+      // Provide more specific error messages based on the type of error
+      let errorMessage = 'Failed to load health data after multiple attempts. Please try refreshing the page.';
+      
+      if (error.message === 'Network Error') {
+        errorMessage = 'Cannot connect to the server. Please make sure the backend is running and you have internet connection.';
+      } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        errorMessage = 'Request timed out. The server may be busy. Please try again in a moment.';
+      } else if (error.response && error.response.status >= 500) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (error.response && error.response.status === 404) {
+        errorMessage = 'API endpoint not found. Please check if the backend server is running correctly.';
+      }
+      
+      setMessage(errorMessage);
       // Re-throw the error so calling functions can handle it appropriately
       throw error;
     }
@@ -292,8 +351,8 @@ function App() {
   // Mood Tracker Functions
   const handleMoodSubmit = async (mood) => {
     try {
-      setLoading(true);
-      const result = await apiCallWithRetry('/api/mood', 'POST', {
+      setMoodLoading(true);
+      const result = await apiCall('/api/mood', 'POST', {
         user_id: parseInt(user.id),
         mood: mood,
         action: 'log'
@@ -306,81 +365,87 @@ function App() {
         loadInitialData();
       }
     } catch (error) {
-      setMessage('Failed to log mood after multiple attempts. Please try again.');
+      setMessage('Failed to log mood. Please try again.');
     } finally {
-      setLoading(false);
+      setMoodLoading(false);
     }
   };
 
   // New function to handle free text mood input
   const handleMoodTextInput = async (e) => {
-    e.preventDefault();
-    const moodText = e.target.moodText.value;
-    if (!moodText.trim()) return;
-    
-    try {
-      setLoading(true);
-      const result = await apiCallWithRetry('/api/mood', 'POST', {
-        user_id: parseInt(user.id),
-        user_input: moodText,
-        action: 'log'
-      });
-      
-      if (result.success) {
-        setMessage(`Mood "${result.logged_mood}" logged successfully based on your input!`);
-        e.target.moodText.value = '';
-        // Add a small delay to ensure database commits are completed
-        await new Promise(resolve => setTimeout(resolve, 500));
-        loadInitialData();
-      }
-    } catch (error) {
-      setMessage('Failed to log mood after multiple attempts. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  e.preventDefault();
 
-  // Food Logger Functions
-  const handleFoodSubmit = async (e) => {
-    e.preventDefault();
-    if (!foodDescription.trim()) return;
-    
-    try {
-      setLoading(true);
-      setMessage('Analyzing nutritional content... This may take a moment.');
-      
-      const result = await apiCallWithRetry('/api/food', 'POST', {
-        user_id: parseInt(user.id),
-        meal_description: foodDescription,
-        action: 'log'
-      });
-      
-      if (result.success) {
-        setMessage('Food logged successfully!');
-        setFoodDescription('');
-        
-        // Refresh data without unnecessary delays
-        try {
-          setMessage('Updating food log...');
-          await apiCallWithRetry('/api/food', 'POST', {
-            user_id: parseInt(user.id),
-            action: 'get_stats'
-          });
-          await loadInitialData();
-        } catch (error) {
-          console.warn('Failed to refresh food data:', error);
-          // Even if refresh fails, the food was logged successfully
-        }
-      } else {
-        setMessage(result.message || 'Failed to log food. Please try again.');
-      }
-    } catch (error) {
-      console.error('Food logging error:', error);
-      setMessage(`Failed to log food after multiple attempts: ${error.message || 'Unknown error'}. Please try again.`);
-    } finally {
-      setLoading(false);
+  const moodText = e.target.moodText.value.trim();
+  if (!moodText) return;
+
+  try {
+    setMoodLoading(true);
+
+    const result = await apiCall('/api/mood', 'POST', {
+      user_id: parseInt(user.id),
+      user_input: moodText,
+      action: 'log'
+    });
+
+    if (result.success) {
+      setMessage(`Mood "${result.logged_mood}" logged successfully based on your input!`);
+
+      // Clear input field
+      e.target.moodText.value = '';
+
+      // Wait a bit to ensure DB commits
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      await loadInitialData();
+    } else {
+      console.error('Mood logging failed:', result.message || 'Unknown error');
     }
-  };
+  } catch (error) {
+    console.error('Mood logging error:', error);
+  } finally {
+    setMoodLoading(false);
+
+    // Clear success message after 2 seconds
+    setTimeout(() => {
+      if (messageRef.current && messageRef.current.includes('logged successfully')) {
+        setMessage('');
+      }
+    }, 2000);
+  }
+};
+
+
+  const handleFoodSubmit = async (e) => {
+  e.preventDefault();
+  if (!foodDescription.trim()) return;
+
+  console.log("Submitting food:", foodDescription);
+
+  try {
+    setFoodLoading(true);
+
+    const result = await apiCallWithRetry('/api/food', 'POST', {
+      user_id: parseInt(user.id),
+      meal_description: foodDescription,
+      action: 'log'
+    });
+
+    if (result.success) {
+      setMessage('Food logged successfully!');
+      setFoodDescription('');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      loadInitialData();
+    } else {
+      setMessage(result.message || 'Failed to log food.');
+    }
+  } catch (error) {
+    console.error("Error logging food:", error);
+    setMessage('Failed to log food. Please try again.');
+  } finally {
+    setFoodLoading(false);
+  }
+};
+
 
   // Function to render glucose line chart
   const renderGlucoseChart = () => {
@@ -638,15 +703,35 @@ function App() {
     setChatInput('');
     setChatMessages(prev => [...prev, { type: 'user', message: userMessage }]);
     
+    let thinkingInterval = null;
+    let thinkingIndex = null;
+    
     try {
-      // Add a thinking message to show the AI is processing
-      const thinkingIndex = Date.now();
+      setChatLoading(true);
+      // Add a dynamic thinking message to show the AI is processing
+      const thinkingMessages = [
+        "📝 Analyzing your question...",
+        "🔍 Searching through health knowledge..."
+      ];
+      
+      thinkingIndex = Date.now();
       setChatMessages(prev => [...prev, { 
         type: 'assistant', 
-        message: 'Thinking...',
+        message: thinkingMessages[0],
         isThinking: true,
         id: thinkingIndex
       }]);
+      
+      // Cycle through thinking messages
+      let messageIndex = 0;
+      thinkingInterval = setInterval(() => {
+        messageIndex = (messageIndex + 1) % thinkingMessages.length;
+        setChatMessages(prev => prev.map(msg => 
+          msg.isThinking && msg.id === thinkingIndex 
+            ? { ...msg, message: thinkingMessages[messageIndex] } 
+            : msg
+        ));
+      }, 1500);
       
       const result = await apiCallWithRetry('/api/interrupt', 'POST', {
         user_id: parseInt(user.id),
@@ -654,8 +739,14 @@ function App() {
         current_context: { active_agent: activeSection }
       });
       
-      // Remove the thinking message
-      setChatMessages(prev => prev.filter(msg => !(msg.isThinking && msg.id === thinkingIndex)));
+      // Clear the thinking interval and message
+      if (thinkingInterval) {
+        clearInterval(thinkingInterval);
+        thinkingInterval = null;
+      }
+      if (thinkingIndex) {
+        setChatMessages(prev => prev.filter(msg => !(msg.isThinking && msg.id === thinkingIndex)));
+      }
       
       if (result.success) {
         setChatMessages(prev => [...prev, { 
@@ -671,13 +762,138 @@ function App() {
       }
     } catch (error) {
       console.error('Chat error:', error);
-      // Remove the thinking message
-      setChatMessages(prev => prev.filter(msg => !msg.isThinking));
+      // Clear the thinking interval and message on error
+      if (thinkingInterval) {
+        clearInterval(thinkingInterval);
+        thinkingInterval = null;
+      }
+      if (thinkingIndex) {
+        setChatMessages(prev => prev.filter(msg => !(msg.isThinking && msg.id === thinkingIndex)));
+      }
+      
+      // Provide more user-friendly error messages
+      let errorMessage = 'Sorry, I encountered an error. Please try again.';
+      if (error.message === 'Network Error') {
+        errorMessage = 'Unable to connect to the AI assistant. Please check your internet connection and try again.';
+      } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        errorMessage = 'The request took too long to process. Please try a simpler question or check your connection.';
+      } else if (error.response && error.response.status >= 500) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (error.response && error.response.status === 404) {
+        errorMessage = 'AI service not found. Please check if the backend server is running correctly.';
+      }
       
       setChatMessages(prev => [...prev, { 
         type: 'assistant', 
-        message: `Sorry, I encountered an error after multiple attempts: ${error.message || 'Unknown error'}. Please try again.` 
+        message: errorMessage
       }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  // Function to handle health score requests
+  const handleHealthScoreRequest = async () => {
+    // Check if user is authenticated
+    if (!user || !user.id) {
+      setChatMessages(prev => [...prev, { 
+        type: 'assistant', 
+        message: "Please log in to access health score functionality." 
+      }]);
+      return;
+    }
+    
+    // Add user message to chat
+    setChatMessages(prev => [...prev, { type: 'user', message: "What's my health score?" }]);
+    
+    let thinkingInterval = null;
+    let thinkingIndex = null;
+    
+    try {
+      setChatLoading(true);
+      // Add a dynamic thinking message to show the AI is processing
+      const thinkingMessages = [
+        "🧠 Analyzing your health data...",
+        "🔍 Calculating your health score...",
+        "📝 Preparing your personalized report...",
+        "✅ Almost there, finalizing your health score..."
+      ];
+      
+      thinkingIndex = Date.now();
+      setChatMessages(prev => [...prev, { 
+        type: 'assistant', 
+        message: thinkingMessages[0],
+        isThinking: true,
+        id: thinkingIndex
+      }]);
+      
+      // Cycle through thinking messages
+      let messageIndex = 0;
+      thinkingInterval = setInterval(() => {
+        messageIndex = (messageIndex + 1) % thinkingMessages.length;
+        setChatMessages(prev => prev.map(msg => 
+          msg.isThinking && msg.id === thinkingIndex 
+            ? { ...msg, message: thinkingMessages[messageIndex] } 
+            : msg
+        ));
+      }, 1500);
+      
+      const result = await apiCallWithRetry('/api/interrupt', 'POST', {
+        user_id: parseInt(user.id),
+        query: "What's my health score?",
+        current_context: { active_agent: activeSection }
+      });
+      
+      // Clear the thinking interval and message
+      if (thinkingInterval) {
+        clearInterval(thinkingInterval);
+        thinkingInterval = null;
+      }
+      if (thinkingIndex) {
+        setChatMessages(prev => prev.filter(msg => !(msg.isThinking && msg.id === thinkingIndex)));
+      }
+      
+      if (result.success) {
+        setChatMessages(prev => [...prev, { 
+          type: 'assistant', 
+          message: result.message,
+          suggestion: result.navigation_suggestion 
+        }]);
+      } else {
+        setChatMessages(prev => [...prev, { 
+          type: 'assistant', 
+          message: result.message || 'Sorry, I encountered an error calculating your health score. Please try again.' 
+        }]);
+      }
+    } catch (error) {
+      console.error('Health score error:', error);
+      // Clear the thinking interval and message on error
+      if (thinkingInterval) {
+        clearInterval(thinkingInterval);
+        thinkingInterval = null;
+      }
+      if (thinkingIndex) {
+        setChatMessages(prev => prev.filter(msg => !(msg.isThinking && msg.id === thinkingIndex)));
+      }
+      
+      // Provide more user-friendly error messages
+      let errorMessage = 'Sorry, I encountered an error calculating your health score. Please try again.';
+      if (error.message === 'Network Error') {
+        errorMessage = 'Unable to connect to the health score service. Please check your internet connection and try again.';
+      } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        errorMessage = 'The request took too long to process. Please try again in a moment.';
+      } else if (error.response && error.response.status >= 500) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (error.response && error.response.status === 404) {
+        errorMessage = 'Health score service not found. Please check if the backend server is running correctly.';
+      }
+      
+      setChatMessages(prev => [...prev, { 
+        type: 'assistant', 
+        message: errorMessage
+      }]);
+    } finally {
+      setChatLoading(false);
     }
   };
 
@@ -849,29 +1065,43 @@ function App() {
 
         {activeSection === 'mood' && (
         <>
-          <div style={{
-            background: '#ffffff',
-            padding: '28px',
-            borderRadius: '16px',
-            boxShadow: '0 8px 20px rgba(0, 0, 0, 0.12)',
-            marginBottom: '24px',
-            maxWidth: '100%',
-            margin: 'auto'
-          }}>
-            <h3 style={{
-              fontSize: '20px',
-              fontWeight: '600',
-              color: '#111827',
-              textAlign: 'center'
-            }}>
+          <div
+            style={{
+              background: "#ffffff",
+              padding: "28px",
+              borderRadius: "16px",
+              boxShadow: "0 8px 20px rgba(0, 0, 0, 0.12)",
+              marginBottom: "24px",
+              maxWidth: "100%",
+              margin: "auto"
+            }}
+          >
+            <h3
+              style={{
+                fontSize: "20px",
+                fontWeight: "600",
+                color: "#111827",
+                textAlign: "center"
+              }}
+            >
               How are you feeling today?
-
             </h3>
-            
+
+            {/* Mood tracking message display - removed per requirements */}
+
             {/* Free text mood input */}
-            <form onSubmit={handleMoodTextInput} style={{ marginBottom: '24px' }}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
+            <form
+              onSubmit={handleMoodTextInput}
+              style={{ marginBottom: "24px" }}
+            >
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "8px",
+                    fontWeight: "500"
+                  }}
+                >
                   Describe your mood or just tap to express it
                 </label>
                 <textarea
@@ -879,83 +1109,102 @@ function App() {
                   placeholder="Example: I'm feeling great today after my morning workout!"
                   rows={2}
                   style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '2px solid #e2e8f0',
-                    borderRadius: '8px',
-                    fontSize: '16px',
-                    resize: 'vertical'
+                    width: "100%",
+                    padding: "12px",
+                    border: "2px solid #e2e8f0",
+                    borderRadius: "8px",
+                    fontSize: "16px",
+                    resize: "vertical"
                   }}
-                  disabled={loading}
+                  disabled={moodLoading}
                 />
               </div>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={moodLoading}
                 style={{
-                  padding: '10px 16px',
-                  background: '#667eea',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
+                  padding: "10px 16px",
+                  background: moodLoading ? "#94a3b8" : "#667eea",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontWeight: "600",
+                  cursor: moodLoading ? "not-allowed" : "pointer"
                 }}
               >
-                {loading ? 'Processing...' : 'Log Mood from Text'}
+                {moodLoading ? "Processing..." : "Log Mood from Text"}
               </button>
             </form>
 
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)', // Forces 3 columns
-              gap: '20px',
-              marginTop: '24px'
-            }}>
-
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: "20px",
+                marginTop: "24px"
+              }}
+            >
               {[
-                { emoji: '😊', name: 'Happy', color: '#4ade80' },
-                { emoji: '😢', name: 'Sad', color: '#3b82f6' },
-                { emoji: '😠', name: 'Angry', color: '#ef4444' },
-                { emoji: '😌', name: 'Calm', color: '#06b6d4' },
-                { emoji: '😴', name: 'Tired', color: '#64748b' },
-                { emoji: '😰', name: 'Anxious', color: '#f97316' }
+                { emoji: "😊", name: "Happy", color: "#4ade80" },
+                { emoji: "😢", name: "Sad", color: "#3b82f6" },
+                { emoji: "😠", name: "Angry", color: "#ef4444" },
+                { emoji: "😌", name: "Calm", color: "#06b6d4" },
+                { emoji: "😴", name: "Tired", color: "#64748b" },
+                { emoji: "😰", name: "Anxious", color: "#f97316" }
               ].map((mood) => (
                 <button
                   key={mood.name}
                   onClick={() => handleMoodSubmit(mood.name)}
-                  disabled={loading}
+                  disabled={moodLoading}
                   style={{
-                    padding: '18px',
-                    background: `linear-gradient(135deg, ${mood.color}55, ${mood.color}22)`,
-                    border: 'none',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    textAlign: 'center',
-                    boxShadow: `0 4px 12px ${mood.color}33`,
-                    transition: 'transform 0.2s, box-shadow 0.2s',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center'
+                    padding: "18px",
+                    background: moodLoading
+                      ? `linear-gradient(135deg, #cbd5e1 0%, #94a3b8 100%)`
+                      : `linear-gradient(135deg, ${mood.color}55, ${mood.color}22)`,
+                    border: "none",
+                    borderRadius: "12px",
+                    cursor: moodLoading ? "not-allowed" : "pointer",
+                    fontSize: "14px",
+                    textAlign: "center",
+                    boxShadow: moodLoading
+                      ? "none"
+                      : `0 4px 12px ${mood.color}33`,
+                    transition: "transform 0.2s, box-shadow 0.2s",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center"
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                  onMouseEnter={(e) => {
+                    if (!moodLoading) {
+                      e.currentTarget.style.transform = "scale(1.05)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!moodLoading) {
+                      e.currentTarget.style.transform = "scale(1)";
+                    }
+                  }}
                 >
-                  <div style={{
-                    fontSize: '28px',
-                    marginBottom: '8px',
-                    background: '#fff',
-                    borderRadius: '50%',
-                    padding: '12px',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
-                  }}>
+                  <div
+                    style={{
+                      fontSize: "28px",
+                      marginBottom: "8px",
+                      background: "#fff",
+                      borderRadius: "50%",
+                      padding: "12px",
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.1)"
+                    }}
+                  >
                     {mood.emoji}
                   </div>
-                  <div style={{
-                    fontWeight: '500',
-                    color: '#1f2937'
-                  }}>{mood.name}</div>
+                  <div
+                    style={{
+                      fontWeight: "500",
+                      color: "#1f2937"
+                    }}
+                  >
+                    {mood.name}
+                  </div>
                 </button>
               ))}
             </div>
@@ -963,8 +1212,7 @@ function App() {
         </>
       )}
 
-
-        {activeSection === 'glucose' && (
+      {activeSection === 'glucose' && (
           <>
             
             {/* Current Status Display */}
@@ -1042,6 +1290,9 @@ function App() {
               marginBottom: '24px'
             }}>
               <h3>Log Food Intake</h3>
+              
+              {/* Food logging message display - removed per requirements */}
+              
               <form onSubmit={handleFoodSubmit} style={{ marginTop: '20px' }}>
                 <div style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
@@ -1060,23 +1311,24 @@ function App() {
                       fontSize: '16px',
                       resize: 'vertical'
                     }}
-                    disabled={loading}
+                    disabled={foodLoading}
                   />
                 </div>
                 <button
                   type="submit"
-                  disabled={loading || !foodDescription.trim()}
+                  disabled={foodLoading || !foodDescription.trim()}
                   style={{
                     padding: '12px 24px',
-                    background: '#10b981',
+                    background: foodLoading ? '#94a3b8' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                     color: 'white',
                     border: 'none',
                     borderRadius: '8px',
                     fontWeight: '600',
-                    cursor: 'pointer'
+                    cursor: foodLoading || !foodDescription.trim() ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
                   }}
                 >
-                  {loading ? 'Analyzing...' : 'Log Food & Analyze Nutrition'}
+                  {foodLoading ? 'Analyzing...' : 'Log Food & Analyze Nutrition'}
                 </button>
               </form>
             </div>
@@ -1084,7 +1336,7 @@ function App() {
               <div style={{ background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)' }}>
                 <h3>Recent Food Logs</h3>
                 {foodLogs.slice(0, 5).map((entry, index) => (
-                  <div key={index} style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', marginBottom: '12px' }}>
+                  <div key={`${entry.timestamp}-${index}`} style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', marginBottom: '12px' }}>
                     <div style={{ fontWeight: '500', marginBottom: '8px', fontSize: '16px' }}>{entry.description || entry.meal_description}</div>
                     
                     {/* Nutrition Information */}
@@ -1210,30 +1462,77 @@ function App() {
             display: "flex",
             flexDirection: "column"
           }}>
-            <h3>Chat with your AI Health Assistant</h3>
+            <h3 style={{ 
+              color: "#10b981", 
+              marginBottom: "16px",
+              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              fontWeight: "700"
+            }}>AI Health Assistant</h3>
             <div style={{
               flex: 1,
               border: "1px solid #e2e8f0",
-              borderRadius: "8px",
+              borderRadius: "12px",
               padding: "16px",
               marginTop: "16px",
               marginBottom: "16px",
               overflowY: "auto",
-              background: "#f8fafc",
+              background: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)",
               display: "flex",
-              flexDirection: "column"
+              flexDirection: "column",
+              gap: "16px"
             }}>
               {chatMessages.length === 0 ? (
-                <div style={{ color: "#666", fontStyle: "italic", textAlign: "center", marginTop: "40px" }}>
-                  Start a conversation! Ask me about your health, get recommendations, or navigate to specific features.
+                <div style={{ 
+                  color: "#64748b", 
+                  fontStyle: "italic", 
+                  textAlign: "center", 
+                  marginTop: "40px",
+                  padding: "20px",
+                  background: "rgba(255, 255, 255, 0.7)",
+                  borderRadius: "12px",
+                  boxShadow: "0 4px 6px rgba(0, 0, 0, 0.05)"
+                }}>
+                  <MessageSquare size={48} style={{ margin: "0 auto 16px", color: "#10b981" }} />
+                  <h4>Hello, {user.first_name}! 👋</h4>
+                  <p>Start a conversation with your AI Health Assistant.</p>
+                  <p>You can ask about:</p>
+                  <ul style={{ textAlign: "left", maxWidth: "300px", margin: "0 auto" }}>
+                    <li>Nutrition advice</li>
+                    <li>Symptom explanations</li>
+                    <li>Health recommendations</li>
+                    <li>Meal suggestions</li>
+                  </ul>
                 </div>
               ) : (
                 chatMessages.map((msg, index) => (
                   <div 
                     key={index} 
-                    style={msg.type === "user" ? userBubbleStyle : assistantBubbleStyle}
+                    style={{
+                      ...((msg.type === "user") ? userBubbleStyle : assistantBubbleStyle),
+                      ...(msg.isThinking && {
+                        background: "white",
+                        color: "#1e293b",
+                        fontStyle: "italic",
+                        animation: "pulse 1.5s infinite",
+                        borderRadius: "18px 18px 18px 4px",
+                        border: "1px solid #e2e8f0",
+                        boxShadow: "0 4px 6px rgba(0, 0, 0, 0.05)"
+                      })
+                    }}
                   >
-                    <div>{msg.message}</div>
+                    <div style={{ whiteSpace: "pre-wrap" }}>{msg.message}</div>
+                    {msg.suggestion && (
+                      <div style={{ 
+                        marginTop: "8px", 
+                        fontSize: "12px", 
+                        opacity: "0.8",
+                        fontStyle: "italic"
+                      }}>
+                        💡 {msg.suggestion}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -1248,36 +1547,80 @@ function App() {
                 placeholder={`Ask me anything, ${user.first_name}...`}
                 style={{
                   flex: 1,
-                  padding: "12px",
-                  border: "2px solid #e2e8f0",
-                  borderRadius: "8px",
-                  fontSize: "16px"
+                  padding: "14px",
+                  border: "2px solid #cbd5e1",
+                  borderRadius: "12px",
+                  fontSize: "16px",
+                  outline: "none",
+                  transition: "all 0.2s",
+                  background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)"
                 }}
-                disabled={loading}
+                onFocus={(e) => {
+                  e.target.style.borderColor = "#3b82f6";
+                  e.target.style.boxShadow = "0 0 0 3px rgba(59, 130, 246, 0.2)";
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = "#cbd5e1";
+                  e.target.style.boxShadow = "none";
+                }}
+                disabled={chatLoading}
               />
+              {/* Health Score Button */}
+<div style={{ textAlign: "center", marginTop: "10px" }}>
+  <button
+    style={{
+      background: "rgba(0, 123, 255, 0.1)",
+      border: "1px solid #007bff",
+      color: "#007bff",
+      padding: "8px 15px",
+      borderRadius: "5px",
+      cursor: "pointer",
+      fontSize: "14px"
+    }}
+    onMouseEnter={e => (e.target.style.opacity = "1")}
+    onMouseLeave={e => (e.target.style.opacity = "0.7")}
+    onClick={handleHealthScoreRequest}
+  >
+    Click to know how healthy you are
+  </button>
+</div>
+
               <button
                 type="submit"
-                disabled={loading || !chatInput.trim()}
+                disabled={chatLoading || !chatInput.trim()}
                 style={{
-                  padding: "12px 20px",
-                  background: "#10b981",
+                  padding: "14px 24px",
+                  background: chatLoading ? "#94a3b8" : "linear-gradient(135deg, #10b981 0%, #059669 100%)",
                   color: "white",
                   border: "none",
-                  borderRadius: "8px",
+                  borderRadius: "12px",
                   fontWeight: "600",
-                  cursor: "pointer",
+                  cursor: chatLoading || !chatInput.trim() ? "not-allowed" : "pointer",
                   display: "flex",
                   alignItems: "center",
-                  gap: "8px"
+                  gap: "8px",
+                  boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
+                  transition: "all 0.2s"
+                }}
+                onMouseEnter={(e) => {
+                  if (!chatLoading && chatInput.trim()) {
+                    e.target.style.transform = "translateY(-2px)";
+                    e.target.style.boxShadow = "0 6px 8px rgba(0, 0, 0, 0.15)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = "translateY(0)";
+                  e.target.style.boxShadow = "0 4px 6px rgba(0, 0, 0, 0.1)";
                 }}
               >
-                <Send size={16} />
-                {loading ? "Sending..." : "Send"}
+                <Send size={18} />
+                {chatLoading ? "Sending..." : "Send"}
               </button>
             </form>
           </div>
         </>
       )}
+
       </div>
     </div>
   );
