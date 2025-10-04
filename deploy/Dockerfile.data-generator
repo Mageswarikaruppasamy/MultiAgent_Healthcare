@@ -14,11 +14,8 @@ RUN apt-get update && apt-get install -y \
 # Create non-root user for security
 RUN groupadd -r healthcare && useradd -r -g healthcare healthcare
 
-# Copy requirements
-COPY data/requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install faker
 
 # Copy data generation script
 COPY data/generate_dataset.py .
