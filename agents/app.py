@@ -306,9 +306,9 @@ if __name__ == "__main__":
             print(f"✅ Updated database path to: {db_path}")
     
     uvicorn.run(
-        "app:app",  # Use import string for reload to work
-        host="localhost", 
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
+    "app:app",
+    host="0.0.0.0", 
+    port=8000,
+    reload=True,
+    log_level="info"
+)

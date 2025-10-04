@@ -1,7 +1,15 @@
-# docker-compose.yml
 version: '3.8'
 
 services:
+  data-generator:
+    build:
+      context: ./data
+      dockerfile: Dockerfile
+    volumes:
+      - ./data:/app/data
+    networks:
+      - healthcare-network
+
   backend:
     build:
       context: ./agents
@@ -9,17 +17,19 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_PATH=/app/data/healthcare_data.db
+      - DATABASE_PATH=/data/healthcare_data.db
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    env_file:
+      - .env
     volumes:
-      - ./data:/app/data
+      - ./data:/data        # maps your data folder to /data inside container
       - ./agents:/app
     networks:
       - healthcare-network
     restart: unless-stopped
     depends_on:
-      data-generator:
-        condition: service_completed_successfully
+      - data-generator
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -40,20 +50,6 @@ services:
       - healthcare-network
     restart: unless-stopped
 
-  data-generator:
-    build:
-      context: ./data
-      dockerfile: Dockerfile
-    volumes:
-      - ./data:/app/data
-    command: python generate_dataset.py
-    networks:
-      - healthcare-network
-
 networks:
   healthcare-network:
     driver: bridge
-
-volumes:
-  healthcare-data:
-    driver: local

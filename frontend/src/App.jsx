@@ -191,52 +191,31 @@ function App() {
   };
 
   // API helper function with retry logic and better error handling
-  const apiCallWithRetry = async (endpoint, method = 'GET', data = null, maxRetries = 2) => {
-    let lastError;
-    
-    for (let i = 0; i <= maxRetries; i++) {
-      try {
-        const config = {
-          method,
-          url: `http://localhost:8000${endpoint}`,
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 35000  // 35 seconds timeout
-        };
-        if (data) config.data = data;
-        
-        const response = await axios(config);
-        return response.data;
-      } catch (error) {
-        lastError = error;
-        console.error(`API call failed for ${endpoint} (attempt ${i + 1}/${maxRetries + 1}):`, error);
-        
-        // Handle timeout specifically
-        if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-          console.warn(`Timeout occurred for ${endpoint}. This might be expected for LLM calls.`);
-          // For timeout errors, we might want to retry with a longer timeout for LLM calls
-          if (endpoint.includes('interrupt') || endpoint.includes('food') || endpoint.includes('mood')) {
-            // Increase timeout for subsequent retries of LLM-heavy endpoints
-            // This is handled by the axios config timeout, but we log it for visibility
-          }
-        }
-        
-        // Handle network errors
-        if (error.message === 'Network Error') {
-          console.warn(`Network error for ${endpoint}. This could be due to server not running or CORS issues.`);
-        }
-        
-        // Don't retry on client errors (4xx) or if it's the last attempt
-        if ((error.response && error.response.status >= 400 && error.response.status < 500) || i === maxRetries) {
-          throw error;
-        }
-        
-        // Wait before retrying (exponential backoff)
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
-      }
+  const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000";
+
+const apiCallWithRetry = async (endpoint, method = 'GET', data = null, maxRetries = 2) => {
+  let lastError;
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      const config = {
+        method,
+        url: `${API_BASE}${endpoint}`,
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 35000
+      };
+      if (data) config.data = data;
+      const response = await axios(config);
+      return response.data;
+    } catch (error) {
+      lastError = error;
+      console.error(`API call failed for ${endpoint} attempt ${i + 1}:`, error);
+      if (i === maxRetries) throw error;
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
     }
-    
-    throw lastError;
-  };
+  }
+  throw lastError;
+};
+
 
   // API helper function (updated to use retry logic)
   const apiCall = async (endpoint, method = 'GET', data = null) => {
