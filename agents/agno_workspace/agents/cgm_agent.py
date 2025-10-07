@@ -1,57 +1,62 @@
 import os
-import sqlite3
+import psycopg2
+import psycopg2.extras
 from typing import Dict, Any
 from agno.agent import Agent
-from agno.db.sqlite import SqliteDb
 from dotenv import load_dotenv
 
-# Path to database
+# Load environment variables
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(CURRENT_DIR)))
-DB_PATH = os.path.join(BASE_DIR, "data", "healthcare_data.db")
-
-# Load environment variables with explicit path
 env_path = os.path.join(BASE_DIR, '.env')
 load_dotenv(dotenv_path=env_path, override=True)
-GENAI_API_KEY =  os.getenv("GOOGLE_API_KEY")
 
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+GENAI_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+if not DATABASE_URL:
+    raise Exception("DATABASE_URL not found in environment variables")
 if not GENAI_API_KEY:
-    raise Exception("GEMINI_API_KEY or GOOGLE_API_KEY not found in .env file")
+    raise Exception("GOOGLE_API_KEY not found in environment variables")
+
+
+def get_connection():
+    return psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 # Tool function
 def check_glucose(user_id: int, glucose_reading: int = None, action: str = "") -> Dict[str, Any]:
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cur = conn.cursor()
 
     try:
         if action == "get_stats":
-            # Get glucose history for the user
             cur.execute("""
                 SELECT glucose_reading, timestamp FROM cgm_readings
-                WHERE user_id=? ORDER BY timestamp DESC LIMIT 10
+                WHERE user_id=%s ORDER BY timestamp DESC LIMIT 10
             """, (user_id,))
             rows = cur.fetchall()
-            
+
             return {
                 "success": True,
                 "message": f"Retrieved {len(rows)} glucose readings for user {user_id}",
-                "cgm_history": [{"glucose_reading": row[0], "timestamp": row[1]} for row in rows],
+                "cgm_history": [{"glucose_reading": row["glucose_reading"], "timestamp": row["timestamp"]} for row in rows],
                 "glucose_reading": None,
                 "status": "history",
                 "alert_flag": False,
                 "recommendations": []
             }
-        
-        # If glucose reading not provided, fetch latest from DB
+
         if glucose_reading is None:
             cur.execute("""
                 SELECT glucose_reading FROM cgm_readings
-                WHERE user_id=? ORDER BY timestamp DESC LIMIT 1
+                WHERE user_id=%s ORDER BY timestamp DESC LIMIT 1
             """, (user_id,))
             row = cur.fetchone()
             if row:
-                glucose_reading = row[0]
+                glucose_reading = row["glucose_reading"]
             else:
                 return {
                     "success": False,
@@ -62,7 +67,7 @@ def check_glucose(user_id: int, glucose_reading: int = None, action: str = "") -
                     "recommendations": []
                 }
 
-        # Determine glucose status
+        # Glucose status
         if glucose_reading < 80:
             status = "Low"
             alert_flag = True
@@ -85,11 +90,10 @@ def check_glucose(user_id: int, glucose_reading: int = None, action: str = "") -
                 "Keep monitoring glucose regularly."
             ]
 
-        # If action is "log", save the reading to the database
         if action == "log" and glucose_reading is not None:
             cur.execute("""
                 INSERT INTO cgm_readings (user_id, glucose_reading)
-                VALUES (?, ?)
+                VALUES (%s, %s)
             """, (user_id, glucose_reading))
             conn.commit()
 
@@ -112,10 +116,12 @@ def check_glucose(user_id: int, glucose_reading: int = None, action: str = "") -
             "recommendations": []
         }
     finally:
+        cur.close()
         conn.close()
 
+
 # Setup agent
-db = SqliteDb(db_file=DB_PATH)
+db = {"get_connection": get_connection}  # Mock db object
 cgm_agent = Agent(db=db, tools=[])
 
 # Register tool
@@ -125,12 +131,14 @@ cgm_agent.tools.append({
     "func": check_glucose
 })
 
+
 # Helper to run tool
 def run_tool(agent: Agent, tool_name: str, **kwargs):
     for tool in agent.tools:
         if tool["name"] == tool_name:
             return tool["func"](**kwargs)
     return {"success": False, "message": f"Tool {tool_name} not found", "glucose_reading": None, "status": "fail", "alert_flag": False, "recommendations": []}
+
 
 # Test
 if __name__ == "__main__":

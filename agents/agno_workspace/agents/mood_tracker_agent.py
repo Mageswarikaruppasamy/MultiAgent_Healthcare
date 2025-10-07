@@ -1,33 +1,43 @@
-import sqlite3
-import json
 import os
+import psycopg2
+import psycopg2.extras
+import json
+import re
+import time
 from typing import Dict, Any
 from agno.agent import Agent
-from agno.db.sqlite import SqliteDb
-import google.generativeai as genai
 from dotenv import load_dotenv
 from functools import lru_cache
-import time
-import re
+import google.generativeai as genai
 
-# DB path
+# --------------------------
+# Environment & Config
+# --------------------------
+# Load environment variables
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(CURRENT_DIR)))
-DB_PATH = os.path.join(BASE_DIR, "data", "healthcare_data.db")
-
-# Load API key
 env_path = os.path.join(BASE_DIR, '.env')
 load_dotenv(dotenv_path=env_path, override=True)
+
+DATABASE_URL = os.getenv("DATABASE_URL")
 GENAI_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
 
+if not DATABASE_URL:
+    raise Exception("DATABASE_URL not found in environment variables.")
 if not GENAI_API_KEY:
     raise Exception("Valid Google API key not found in environment variables.")
 
-# Configure Gemini
 genai.configure(api_key=GENAI_API_KEY)
 
 # --------------------------
-# Keyword-based mood mapping
+# DB Connection Helper
+# --------------------------
+def get_connection():
+    return psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+
+# --------------------------
+# Mood Keywords
 # --------------------------
 MOOD_KEYWORDS = {
     "happy": ["happy", "joy", "glad", "excited", "smile", "delighted"],
@@ -37,23 +47,19 @@ MOOD_KEYWORDS = {
     "anxious": ["anxious", "nervous", "worried", "stressed", "uneasy"],
     "angry": ["angry", "mad", "furious", "annoyed", "irritated", "frustrated"],
 }
-
 VALID_MOODS = list(MOOD_KEYWORDS.keys())
 
 def classify_mood_keywords(user_input: str) -> str:
-    """Fast keyword-based mood classification"""
+    """Keyword-based mood classification."""
     text = user_input.lower()
     for mood, keywords in MOOD_KEYWORDS.items():
         if any(word in text for word in keywords):
             return mood
     return None
 
-# --------------------------
-# LLM fallback
-# --------------------------
 @lru_cache(maxsize=128)
 def classify_mood_llm(user_input: str) -> str:
-    """Uses Gemini only if no keyword matches"""
+    """Uses Gemini if no keyword match."""
     try:
         model = genai.GenerativeModel('gemini-2.0-flash')
         prompt = (
@@ -67,10 +73,8 @@ def classify_mood_llm(user_input: str) -> str:
             generation_config={"temperature": 0.2, "max_output_tokens": 10}
         )
         mood_text = response.text.strip().lower()
-        mood_match = re.search(r'\b(happy|sad|calm|tired|anxious|angry)\b', mood_text)
-        if mood_match:
-            return mood_match.group(1)
-        return "calm"  # default fallback
+        match = re.search(r'\b(happy|sad|calm|tired|anxious|angry)\b', mood_text)
+        return match.group(1) if match else "calm"
     except Exception as e:
         print("LLM classification error:", e)
         return "calm"
@@ -79,70 +83,67 @@ def classify_mood_llm(user_input: str) -> str:
 # Mood Tracker Agent
 # --------------------------
 def mood_tracker_agent(user_id: int, mood: str = None, action: str = "log", user_input: str = None) -> Dict[str, Any]:
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
     try:
+        conn = get_connection()
+        cur = conn.cursor()
+
         if action == "log":
             if not mood:
                 if user_input:
-                    # Step 1: Direct match
                     user_input_lower = user_input.lower().strip()
                     if user_input_lower in VALID_MOODS:
                         mood = user_input_lower
                     else:
-                        # Step 2: Keyword check
                         mood = classify_mood_keywords(user_input)
-                        # Step 3: LLM fallback
                         if not mood:
                             mood = classify_mood_llm(user_input)
                 else:
                     return {"success": False, "message": "Mood or input required", "logged_mood": None}
 
-            cur.execute("INSERT INTO mood_logs (user_id, mood) VALUES (?, ?)", (user_id, mood))
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS mood_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id),
+                    mood TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("INSERT INTO mood_logs (user_id, mood) VALUES (%s, %s) RETURNING id", (user_id, mood))
+            inserted_id = cur.fetchone()["id"]
             conn.commit()
 
-            return {"success": True, "message": "Mood logged successfully", "logged_mood": mood}
+            return {"success": True, "message": "Mood logged successfully", "logged_mood": mood, "log_id": inserted_id}
 
         elif action == "get_stats":
-            cur.execute("SELECT mood, COUNT(*) FROM mood_logs WHERE user_id=? GROUP BY mood", (user_id,))
-            mood_counts = dict(cur.fetchall())
-            cur.execute("SELECT mood, timestamp FROM mood_logs WHERE user_id=? ORDER BY timestamp DESC LIMIT 10", (user_id,))
-            history = [{"mood": m, "timestamp": t} for m, t in cur.fetchall()]
+            cur.execute("SELECT mood, COUNT(*) AS count FROM mood_logs WHERE user_id=%s GROUP BY mood", (user_id,))
+            mood_counts = {row["mood"]: row["count"] for row in cur.fetchall()}
+
+            cur.execute("SELECT mood, timestamp FROM mood_logs WHERE user_id=%s ORDER BY timestamp DESC LIMIT 10", (user_id,))
+            history = [{"mood": row["mood"], "timestamp": row["timestamp"]} for row in cur.fetchall()]
 
             return {"success": True, "message": "Mood statistics retrieved", "mood_stats": mood_counts, "mood_history": history}
 
         return {"success": False, "message": "Invalid action"}
+    except Exception as e:
+        return {"success": False, "message": f"Error in mood tracker agent: {str(e)}"}
     finally:
+        cur.close()
         conn.close()
 
 # --------------------------
-# Agent Schema & Registration
+# Agent Setup
 # --------------------------
-AGENT_SCHEMA = {
-    "name": "mood_tracker_agent",
-    "version": "1.0.0",
-    "description": "Tracks user mood and computes rolling averages",
-    "inputs": {
-        "user_id": {"type": "integer", "required": True},
-        "mood": {"type": "string", "enum": VALID_MOODS, "required": False},
-        "user_input": {"type": "string", "required": False},
-        "action": {"type": "string", "enum": ["log", "get_stats"], "default": "log"}
-    },
-    "outputs": {
-        "success": {"type": "boolean"},
-        "message": {"type": "string"},
-        "logged_mood": {"type": "string"},
-        "mood_stats": {"type": "object"},
-        "mood_history": {"type": "array"}
-    }
-}
+from agno.db.postgres import PostgresDb  # Ensure PostgresDb exists
+db = PostgresDb(DATABASE_URL)
 
-db = SqliteDb(db_file=DB_PATH)
-mood_agent = Agent(db=db, tools=[{"name": "mood_tracker", "description": "Logs moods and provides statistics", "func": mood_tracker_agent}])
+mood_agent = Agent(db=db, tools=[{
+    "name": "mood_tracker",
+    "description": "Logs moods and provides statistics",
+    "func": mood_tracker_agent
+}])
 
 # --------------------------
-# Helper to run tool
+# Run Helper
 # --------------------------
 def run_tool(agent: Agent, tool_name: str, **kwargs):
     for tool in agent.tools:
@@ -151,7 +152,7 @@ def run_tool(agent: Agent, tool_name: str, **kwargs):
     return {"success": False, "message": f"Tool {tool_name} not found"}
 
 # --------------------------
-# Example
+# Example Run
 # --------------------------
 if __name__ == "__main__":
     print(run_tool(mood_agent, "mood_tracker", user_id=1, user_input="I feel mad", action="log"))
