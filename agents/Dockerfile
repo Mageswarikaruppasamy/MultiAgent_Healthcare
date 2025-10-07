@@ -19,4 +19,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 COPY wait-for-db.sh .
 RUN chmod +x wait-for-db.sh
 
-CMD ["./wait-for-db.sh"]
+# Skip waiting if file already exists
+CMD ["bash", "-c", "if [ ! -f /data/healthcare_data.db ]; then echo '⚙️ Generating dummy DB'; touch /data/healthcare_data.db; fi && uvicorn app:app --host 0.0.0.0 --port 8000"]
+
