@@ -2,24 +2,24 @@ FROM node:18-slim
 
 WORKDIR /app
 
+# Copy only package.json and package-lock.json for dependency caching
 COPY package*.json ./
 
-# Install all dependencies, including devDependencies
+# Install dependencies (this will create node_modules)
 RUN npm install
 
+# Copy all other files after dependencies
 COPY . .
 
-# Build frontend
-RUN npm run build
+# Make vite explicitly executable (if local)
+RUN chmod +x ./node_modules/.bin/vite
 
-# Install serve globally to serve the build
+# Build frontend
+RUN npx vite build
+
+# Install serve globally
 RUN npm install -g serve
 
 EXPOSE 3000
 
-# Health check for Render
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000 || exit 1
-
-# Start serve
-CMD ["serve", "-s", "build", "-l", "3000"]
+CMD ["serve", "-s", "dist", "-l", "3000"]
