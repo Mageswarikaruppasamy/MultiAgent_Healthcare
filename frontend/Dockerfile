@@ -4,15 +4,14 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm ci --prefer-binary
+RUN npm ci --prefer-binary --include=dev
 
 COPY . .
 
-RUN npm run build
+RUN npx vite build
 
 RUN npm install -g serve
 
 EXPOSE 3000
-
 
 CMD ["serve", "-s", "build", "-l", "3000"]
