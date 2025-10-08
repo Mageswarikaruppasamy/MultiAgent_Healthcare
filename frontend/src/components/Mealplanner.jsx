@@ -4,7 +4,7 @@ import { Calendar, Clock, Target, Utensils, Leaf, Heart } from "lucide-react";
 import "./Mealplanner.css";
 
 // ====== SET BACKEND BASE URL ======
-const API_BASE = "http://localhost:8000"; // Change to your backend address
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // ====== Axios helper with retry logic ======
 const apiCallWithRetry = async (endpoint, config = {}, maxRetries = 2) => {
@@ -238,3 +238,4 @@ const MealPlanner = ({ userId, userContext, onComplete }) => {
 };
 
 export default MealPlanner;
+
