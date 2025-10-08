@@ -7,7 +7,7 @@ import "./Mealplanner.css";
 const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000"; // Change to your backend address
 
 // ====== Axios helper with retry logic ======
-const apiCallWithRetry = async (endpoint, config = {}, maxRetries = 2) => {
+async function apiCallWithRetry(endpoint, config = {}, maxRetries = 2) {
   let lastError;
 
   for (let i = 0; i <= maxRetries; i++) {
@@ -35,7 +35,7 @@ const apiCallWithRetry = async (endpoint, config = {}, maxRetries = 2) => {
   }
 
   throw lastError;
-};
+}
 
 const MealPlanner = ({ userId, userContext, onComplete }) => {
   const [specialRequirements, setSpecialRequirements] = useState("");
@@ -238,3 +238,4 @@ const MealPlanner = ({ userId, userContext, onComplete }) => {
 };
 
 export default MealPlanner;
+
