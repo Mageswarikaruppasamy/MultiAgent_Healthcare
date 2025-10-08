@@ -191,7 +191,7 @@ function App() {
   };
 
   // API helper function with retry logic and better error handling
-  const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000";
+  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const apiCallWithRetry = async (endpoint, method = 'GET', data = null, maxRetries = 2) => {
   let lastError;
@@ -1607,3 +1607,4 @@ const apiCallWithRetry = async (endpoint, method = 'GET', data = null, maxRetrie
 
 
 export default App;
+
