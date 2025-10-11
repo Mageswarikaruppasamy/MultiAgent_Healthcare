@@ -68,7 +68,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",
+        "http://localhost:8080",
         "http://localhost:3001",
+        "https://wellness-co-pilot.lovable.app",
+        "https://my-health-ai-dashboard.lovable.app",
         "https://multiagent-healthcare-frontend.onrender.com"
     ],
     allow_credentials=True,
@@ -265,7 +268,6 @@ async def get_available_moods():
             "tired": 2,
             "anxious": 1,
             "calm": 4,
-            "energetic": 5,
             "angry": 1
         }
     }
@@ -312,7 +314,7 @@ if __name__ == "__main__":
     
     uvicorn.run(
     "app:app",
-    host="0.0.0.0", 
+    host="localhost", 
     port=8000,
     reload=True,
     log_level="info"

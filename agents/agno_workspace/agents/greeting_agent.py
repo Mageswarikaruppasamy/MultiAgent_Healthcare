@@ -57,14 +57,14 @@ def greet_user(user_id: int) -> Dict[str, Any]:
                 "success": True,
                 "message": f"Hello {row['first_name']} {row['last_name']} from {row['city']} 👋! "
                            f"Welcome to your personalized Health Care companion.",
-                "user_info": user_info,
+                "user": user_info,
                 "action": "proceed"
             }
         else:
             return {
                 "success": False,
                 "message": f"User ID {user_id} not found ❌",
-                "user_info": None,
+                "user": None,
                 "action": "ask_signup"
             }
 
@@ -72,7 +72,7 @@ def greet_user(user_id: int) -> Dict[str, Any]:
         return {
             "success": False,
             "message": f"Error: {str(e)}",
-            "user_info": None,
+            "user": None,
             "action": "fail"
         }
     finally:

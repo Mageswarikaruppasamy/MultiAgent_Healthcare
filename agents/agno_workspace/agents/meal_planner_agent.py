@@ -77,14 +77,45 @@ def get_user_context(user_id: int) -> Dict[str, Any]:
 # ------------------------------
 def generate_meal_plan(user_context: Dict[str, Any], special_requirements: str = "") -> Dict[str, Any]:
     try:
-        prompt = (
-            f"Create a detailed meal plan for the next day with Breakfast, Lunch, and Dinner, "
-            f"based on these preferences:\n"
-            f"Dietary Preference: {user_context.get('dietary_preference', 'None')}\n"
-            f"Medical Conditions: {', '.join(user_context.get('medical_conditions', []))}\n"
-            f"Special Requirements: {special_requirements}\n\n"
-            "Return the meal plan as JSON with the structure described previously."
-        )
+        prompt = ( f"Create a detailed meal plan for the next day with Breakfast, Lunch, and Dinner, "
+                  f"based on these preferences:\n" 
+                  f"Dietary Preference: {user_context.get('dietary_preference', 'None')}\n" 
+                  f"Medical Conditions: {', '.join(user_context.get('medical_conditions', []))}\n" 
+                  f"Special Requirements: {special_requirements}\n\n" 
+                  "Return the meal plan as JSON with the following structure:\n" 
+                  "{\n" " \"breakfast\": {\n" 
+                  " \"name\": \"Meal name\",\n" 
+                    " \"description\": \"Meal description\",\n" 
+                    " \"estimated_nutrition\": {\n" 
+                        " \"calories\": 0,\n" 
+                        " \"carbs\": 0,\n" 
+                        " \"protein\": 0,\n" 
+                        " \"fat\": 0,\n" 
+                        " \"fiber\": 0\n" " },\n" 
+                  " \"health_benefits\": [\"benefit1\", \"benefit2\"]\n" " },\n" 
+                  " \"lunch\": {\n" 
+                  " \"name\": \"Meal name\",\n" 
+                    " \"description\": \"Meal description\",\n" 
+                    " \"estimated_nutrition\": {\n" 
+                        " \"calories\": 0,\n" 
+                        " \"carbs\": 0,\n" 
+                        " \"protein\": 0,\n" 
+                        " \"fat\": 0,\n" 
+                        " \"fiber\": 0\n" " },\n" 
+                  " \"health_benefits\": [\"benefit1\", \"benefit2\"]\n" " },\n" 
+                  " \"dinner\": {\n" " \"name\": \"Meal name\",\n"
+                    " \"description\": \"Meal description\",\n" 
+                    " \"estimated_nutrition\": {\n" 
+                        " \"calories\": 0,\n" 
+                        " \"carbs\": 0,\n" 
+                        " \"protein\": 0,\n" 
+                        " \"fat\": 0,\n" 
+                        " \"fiber\": 0\n" " },\n" 
+                  " \"health_benefits\": [\"benefit1\", \"benefit2\"]\n" " },\n" 
+                " \"daily_totals\": {\n" " \"calories\": 0,\n" " \"carbs\": 0,\n" " \"protein\": 0,\n" " \"fat\": 0,\n" " \"fiber\": 0\n" " },\n" " \"special_notes\": [\"note1\", \"note2\"]\n" "}\n" 
+                "IMPORTANT: Respond ONLY with valid JSON, no additional text. Make sure all fields are present. Health Benefits should be short and crisp in 4 to 5 words each.\n" 
+                "Do not include ingredients unless specifically requested in the special requirements."
+                )
 
         response = client.models.generate_content(
             model="gemini-2.5-flash",
