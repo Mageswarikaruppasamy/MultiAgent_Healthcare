@@ -3,6 +3,9 @@ FROM node:18-slim AS builder
 
 WORKDIR /app
 
+# Install global Vite so it's executable
+RUN npm install -g vite
+
 # Copy package files and install dependencies
 COPY package*.json ./
 RUN npm install --legacy-peer-deps
@@ -10,8 +13,8 @@ RUN npm install --legacy-peer-deps
 # Copy source files
 COPY . .
 
-# Build using npx to ensure proper execution
-RUN npx vite build
+# Build the production files
+RUN vite build
 
 # Stage 2: Serve the app
 FROM node:18-slim
