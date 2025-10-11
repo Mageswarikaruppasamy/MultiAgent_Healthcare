@@ -1,28 +1,33 @@
-FROM node:18-slim
+# Stage 1: Build the app
+FROM node:18-slim AS builder
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    git curl build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
+# Set working directory
 WORKDIR /app
 
+# Copy package files and install dependencies
 COPY package*.json ./
-
-# Install devDependencies so vite is available
 RUN npm install --legacy-peer-deps
 
+# Copy source files
 COPY . .
 
-# Ensure vite binary is executable
-RUN chmod +x ./node_modules/.bin/vite
+# Build the production files (Vite outputs to 'dist')
+RUN npm run build
 
-# Run build
-RUN npx vite build
+# Stage 2: Serve the app
+FROM node:18-slim
 
-# Install serve to run build
+# Install serve to run the build
 RUN npm install -g serve
 
+# Set working directory
+WORKDIR /app
+
+# Copy build output from builder
+COPY --from=builder /app/dist ./dist
+
+# Expose port
 EXPOSE 3000
 
-CMD ["serve", "-s", "build", "-l", "3000"]
+# Serve the app
+CMD ["serve", "-s", "dist", "-l", "3000"]
