@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { healthcareApi, MoodData } from '@/services/api';
 import { Card } from '@/components/ui/card';
 import { Smile } from 'lucide-react';
@@ -13,23 +13,24 @@ export const MoodChart = ({ userId }: MoodChartProps) => {
   const [loading, setLoading] = useState(true);
   const [average, setAverage] = useState<number>(0);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await healthcareApi.getMoodStats(userId);
-        if (response.success && response.data) {
-          const sortedData = [...response.data].sort(
-            (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-          );
-          setData(sortedData);
-          setAverage(response.average || 0);
-        }
-      } catch (error) {
-        console.error('Error fetching mood data:', error);
-      } finally {
-        setLoading(false);
+  const fetchData = async () => {
+    try {
+      const response = await healthcareApi.getMoodStats(userId);
+      if (response.success && response.data) {
+        const sortedData = [...response.data].sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        setData(sortedData);
+        setAverage(response.average || 0);
       }
-    };
+    } catch (error) {
+      console.error('Error fetching mood data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, [userId]);
 
@@ -43,7 +44,7 @@ export const MoodChart = ({ userId }: MoodChartProps) => {
     tired: '#9ca3af',
     sad: '#60a5fa',
     anxious: '#f59e0b',
-    angry: '#ef4444'
+    angry: '#ef4444',
   };
 
   last7Moods.forEach((item) => {
@@ -54,12 +55,19 @@ export const MoodChart = ({ userId }: MoodChartProps) => {
   const barChartData = Object.entries(moodCounts).map(([mood, count]) => ({
     mood: mood.charAt(0).toUpperCase() + mood.slice(1),
     count,
-    fill: moodColors[mood] || '#6b7280'
+    fill: moodColors[mood] || '#6b7280',
   }));
 
   if (loading) {
     return (
-      <Card className="p-6" style={{ boxShadow: 'var(--shadow-card)' }}>
+      <Card
+        className="p-6"
+        style={{
+          boxShadow: 'var(--shadow-card)',
+          background: 'linear-gradient(180deg, rgba(230, 255, 240, 0.8), rgba(255,255,255,1))',
+          borderRadius: '16px',
+        }}
+      >
         <div className="flex items-center justify-center h-[300px]">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         </div>
@@ -68,7 +76,14 @@ export const MoodChart = ({ userId }: MoodChartProps) => {
   }
 
   return (
-    <Card className="p-6" style={{ boxShadow: 'var(--shadow-card)', background: 'linear-gradient(180deg, rgba(230, 255, 240, 0.8), rgba(255,255,255,1))'}}>
+    <Card
+      className="p-6"
+      style={{
+        boxShadow: 'var(--shadow-card)',
+        background: 'linear-gradient(180deg, rgba(230, 255, 240, 0.8), rgba(255,255,255,1))',
+        borderRadius: '16px',
+      }}
+    >
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h3 className="text-xl font-semibold mb-1">Mood Overview</h3>
@@ -85,13 +100,15 @@ export const MoodChart = ({ userId }: MoodChartProps) => {
 
       {barChartData.length > 0 ? (
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={barChartData}>
-            {/* Remove CartesianGrid for cleaner look */}
+          <BarChart
+            data={barChartData}
+            margin={{ top: 20, right: 20, left: -30, bottom: -10 }} // ✅ aligned chart edges
+          >
             <XAxis
               dataKey="mood"
               stroke="hsl(var(--muted-foreground))"
               tickLine={false}
-              axisLine={false}
+              axisLine={true} // ✅ bottom axis visible
               style={{ fontSize: '12px' }}
             />
             <YAxis
@@ -110,22 +127,25 @@ export const MoodChart = ({ userId }: MoodChartProps) => {
                 boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
               }}
               labelStyle={{ fontWeight: 600 }}
-              formatter={(value) => [`${value}`, 'Count']}
+              formatter={(value) => [`${value}`, 'Entries']}
             />
-            <Legend />
-            <Bar dataKey="count" radius={[10, 10, 0, 0]} name="Mood Count">
-              {barChartData.map((entry, index) => (
-                <defs key={`gradient-${index}`}>
-                  <linearGradient id={`colorGradient-${index}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={entry.fill} stopOpacity={0.9} />
-                    <stop offset="95%" stopColor={entry.fill} stopOpacity={0.4} />
-                  </linearGradient>
-                </defs>
-              ))}
-              {barChartData.map((entry, index) => (
-                <Bar key={index} dataKey="count" fill={`url(#colorGradient-${index})`} radius={[10, 10, 0, 0]} />
-              ))}
-            </Bar>
+            <Bar
+              dataKey="count"
+              shape={(props) => {
+                const { x, y, width, height, fill } = props;
+                return (
+                  <rect
+                    x={x}
+                    y={y}
+                    width={width}
+                    height={height}
+                    rx={8}
+                    ry={8}
+                    fill={fill}
+                  />
+                );
+              }}
+            />
           </BarChart>
         </ResponsiveContainer>
       ) : (

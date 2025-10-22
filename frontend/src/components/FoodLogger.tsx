@@ -33,7 +33,7 @@ export const FoodLogger = ({ userId }: FoodLoggerProps) => {
     try {
       const response = await healthcareApi.getFoodStats(userId);
       if (response.success && response.data) {
-      setRecentLogs(response.data.slice(0, 5)); // shows the latest 5 at the top
+      setRecentLogs(response.data.slice(0, 2)); // shows the latest 5 at the top
     }
     } catch (error) {
       console.error('Error fetching food logs:', error);
@@ -138,7 +138,7 @@ export const FoodLogger = ({ userId }: FoodLoggerProps) => {
       <Card className="shadow-elegant">
         <CardHeader>
           <CardTitle>Recent Food Logs</CardTitle>
-          <CardDescription>Your last 5 meals</CardDescription>
+          <CardDescription></CardDescription>
         </CardHeader>
         <CardContent>
           {fetchingLogs ? (

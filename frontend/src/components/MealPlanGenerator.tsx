@@ -50,7 +50,6 @@ export const MealPlanGenerator = ({ userId }: MealPlanGeneratorProps) => {
 
   useEffect(() => {
     fetchUserProfile();
-    fetchLatestMealPlan();
   }, [userId]);
 
   const fetchUserProfile = async () => {
@@ -293,7 +292,7 @@ export const MealPlanGenerator = ({ userId }: MealPlanGeneratorProps) => {
             <Calendar className="h-5 w-5 text-primary" />
             Generate Meal Plan
           </CardTitle>
-          <CardDescription>Get a personalized meal plan for tomorrow</CardDescription>
+          <CardDescription>Get a personalized meal plan</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -354,23 +353,6 @@ export const MealPlanGenerator = ({ userId }: MealPlanGeneratorProps) => {
                 </ul>
               </div>
             )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Display the latest meal plan if no new one has been generated */}
-      {!mealPlan && (
-        <Card className="shadow-elegant">
-          <CardHeader>
-            <CardTitle>Latest Meal Plan</CardTitle>
-            <CardDescription>Your most recent personalized meal plan</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-center py-12 text-muted-foreground">
-              <Calendar className="mx-auto h-12 w-12 opacity-50 mb-4" />
-              <p>No meal plan generated yet.</p>
-              <p className="text-sm mt-2">Click "Generate Meal Plan" to create your personalized plan.</p>
-            </div>
           </CardContent>
         </Card>
       )}

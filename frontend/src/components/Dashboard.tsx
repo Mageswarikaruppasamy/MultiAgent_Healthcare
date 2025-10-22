@@ -24,25 +24,33 @@ export const Dashboard = ({ userId, userName }: DashboardProps) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch user profile data
-        const profileResponse = await healthcareApi.greetUser(userId);
-        if (profileResponse.success && profileResponse.user) {
-          setUserProfile(profileResponse.user);
-        }
-        
-        // Fetch health summary data
-        const summaryData = await healthcareApi.getUserSummary(userId);
-        setSummary(summaryData);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      } finally {
-        setLoading(false);
+  const fetchData = async () => {
+    try {
+      // Fetch user profile data
+      const profileResponse = await healthcareApi.greetUser(userId);
+      if (profileResponse.success && profileResponse.user) {
+        setUserProfile(profileResponse.user);
       }
-    };
+      
+      // Fetch health summary data
+      const summaryData = await healthcareApi.getUserSummary(userId);
+      setSummary(summaryData);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
+    
+    // Set up interval to refresh data every 30 seconds
+    const interval = setInterval(() => {
+      fetchData();
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, [userId]);
 
   const getGlucoseStatus = (glucose?: number) => {
@@ -52,7 +60,11 @@ export const Dashboard = ({ userId, userName }: DashboardProps) => {
     return { status: 'Normal', color: 'text-primary' };
   };
 
-  const latestGlucose = summary?.cgm_summary?.data?.[summary.cgm_summary.data.length - 1]?.glucose;
+  // Make sure we're getting the latest glucose reading
+  const data = summary?.cgm_summary?.data;
+  const latestGlucose = data?.length
+    ? data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).at(-1)?.glucose
+    : undefined;
   const glucoseStatus = getGlucoseStatus(latestGlucose);
 
   if (loading) {
@@ -66,7 +78,7 @@ export const Dashboard = ({ userId, userName }: DashboardProps) => {
   return (
     <div className="space-y-6">
       {/* User Profile Section */}
-      <Card className="shadow-elegant">
+      <Card className="shadow-elegant" style={{ borderRadius: '16px' }}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Heart className="h-5 w-5 text-primary" />

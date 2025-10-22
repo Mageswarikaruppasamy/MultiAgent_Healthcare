@@ -17,10 +17,18 @@ interface HealthcareChatbotProps {
 }
 
 export const AIAssistant = ({ userId }: HealthcareChatbotProps) => {
+  const welcomeMessage = `Hello! I'm your healthcare assistant. You can ask me to:
+- Log your mood (e.g., "I'm feeling happy")
+- Log your glucose reading (e.g., "My glucose is 120")
+- Generate meal plans (e.g., "Generate a meal plan")
+- Analyze nutrition (e.g., "What are the nutrition values in a grilled chicken sandwich?")
+
+How can I help you today?`;
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: 'Hello! I\'m your healthcare assistant. You can ask me to:\n- Log your mood (e.g., "I\'m feeling happy")\n- Log your glucose reading (e.g., "My glucose is 120")\n- Generate meal plans (e.g., "Generate a meal plan")\n- Analyze nutrition (e.g., "What are the nutrition values in a grilled chicken sandwich?")\n\nHow can I help you today?',
+      content: welcomeMessage,
     },
   ]);
   const [input, setInput] = useState('');
@@ -271,20 +279,9 @@ I've also logged this meal for you!`;
   };
 
   return (
-    <Card className="flex h-[600px] flex-col p-6" style={{ boxShadow: 'var(--shadow-card)' }}>
-      <div className="mb-4 flex items-center gap-3 border-b pb-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg"
-             style={{ background: 'var(--gradient-primary)' }}>
-          <MessageCircle className="h-5 w-5 text-primary-foreground" />
-        </div>
-        <div>
-          <h3 className="text-xl font-semibold">Healthcare Assistant</h3>
-          <p className="text-sm text-muted-foreground">AI-powered health companion</p>
-        </div>
-      </div>
-
-      <ScrollArea className="flex-1 pr-4">
-        <div className="space-y-4">
+    <Card className="flex h-full flex-col p-0 border-0 shadow-none">
+      <ScrollArea className="flex-1 px-4">
+        <div className="space-y-4 py-4">
           {messages.map((message, index) => (
             <div
               key={index}
@@ -331,7 +328,7 @@ I've also logged this meal for you!`;
         </div>
       </ScrollArea>
 
-      <div className="mt-4 flex gap-2 border-t pt-4">
+      <div className="mt-0 flex gap-2 border-t p-4">
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}

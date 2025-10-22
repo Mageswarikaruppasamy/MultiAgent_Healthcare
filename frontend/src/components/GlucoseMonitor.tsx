@@ -26,8 +26,13 @@ export const GlucoseMonitor = ({ userId }: GlucoseMonitorProps) => {
     const fetchGlucose = async () => {
       try {
         const response = await healthcareApi.getCGMStats(userId);
-        if (response.success && response.data && response.data.length > 0) {
-          setLatestReading(response.data[response.data.length - 1]);
+        if (response.success && Array.isArray(response.data) && response.data.length > 0) {
+          // ✅ Sort by timestamp to ensure correct latest reading
+          const sortedData = [...response.data].sort(
+            (a, b) =>
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+          setLatestReading(sortedData[sortedData.length - 1]);
         }
       } catch (error) {
         console.error("Error fetching glucose data:", error);
@@ -35,6 +40,7 @@ export const GlucoseMonitor = ({ userId }: GlucoseMonitorProps) => {
         setLoading(false);
       }
     };
+
     fetchGlucose();
   }, [userId]);
 
@@ -74,9 +80,11 @@ export const GlucoseMonitor = ({ userId }: GlucoseMonitorProps) => {
       if (response.success) {
         toast({
           title: "Glucose Logged",
-          description: response.message || "Your glucose reading has been recorded successfully."
+          description:
+            response.message ||
+            "Your glucose reading has been recorded successfully.",
         });
-        // Update the latest reading
+        // ✅ Update latest reading instantly
         setLatestReading({
           glucose: glucoseValue,
           timestamp: new Date().toISOString(),
@@ -174,7 +182,9 @@ export const GlucoseMonitor = ({ userId }: GlucoseMonitorProps) => {
             <Plus className="h-5 w-5 text-primary" />
             Log Glucose Reading
           </CardTitle>
-          <CardDescription>Enter your current blood glucose level</CardDescription>
+          <CardDescription>
+            Enter your current blood glucose level
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-2">
@@ -188,7 +198,9 @@ export const GlucoseMonitor = ({ userId }: GlucoseMonitorProps) => {
               disabled={logging}
               className="flex-1"
             />
-            <span className="flex items-center text-muted-foreground">mg/dL</span>
+            <span className="flex items-center text-muted-foreground">
+              mg/dL
+            </span>
             <Button onClick={handleLogGlucose} disabled={logging}>
               {logging ? "Logging..." : "Log"}
             </Button>
