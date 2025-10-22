@@ -8,9 +8,8 @@ import { FoodLogger } from '@/components/FoodLogger';
 import { MealPlanGenerator } from '@/components/MealPlanGenerator';
 import { AIAssistant } from '@/components/AIAssistant';
 import { Button } from '@/components/ui/button';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, X } from 'lucide-react';
 import { useMediaQuery } from 'react-responsive';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const Index = () => {
   const [userId, setUserId] = useState<number | null>(null);
@@ -67,53 +66,54 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Navigation
-        userName={userName}
-        activeSection={activeSection}
-        onSectionChange={setActiveSection}
-        onLogout={handleLogout}
-      />
-      <div className="flex flex-1 overflow-hidden">
-        {/* Main content area */}
-        <div className="flex-1 overflow-auto">
-          <div className="container mx-auto px-4 py-8">
-            {renderSection()}
+      {/* Show full screen AI Assistant when open on mobile */}
+      {isMobile && isAIAssistantOpen ? (
+        <div className="flex flex-col h-screen">
+          <div className="flex items-center justify-between p-4 border-b">
+            <h2 className="text-xl font-semibold">Healthcare Assistant</h2>
+            <Button variant="ghost" size="icon" onClick={() => setIsAIAssistantOpen(false)}>
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <AIAssistant userId={userId} />
           </div>
         </div>
-        
-        {/* Desktop: Always visible sidebar */}
-        {!isMobile && (
-          <div className="w-96 border-l bg-card/50 backdrop-blur-sm p-4 hidden md:block">
-            <div className="h-full overflow-hidden">
-              <AIAssistant userId={userId} />
-            </div>
-          </div>
-        )}
-      </div>
-      
-      {/* Mobile: Floating AI Assistant Button */}
-      {isMobile && (
+      ) : (
         <>
-          <Button
-            className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-50"
-            onClick={() => setIsAIAssistantOpen(true)}
-          >
-            <MessageCircle className="h-6 w-6" />
-          </Button>
-          
-          <Dialog open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen}>
-            <DialogContent className="max-w-md h-3/4 flex flex-col p-0">
-              <DialogHeader className="p-4 border-b">
-                <DialogTitle className="flex items-center gap-2">
-                  <MessageCircle className="h-5 w-5" />
-                  Healthcare Assistant
-                </DialogTitle>
-              </DialogHeader>
-              <div className="flex-1 overflow-hidden">
-                <AIAssistant userId={userId} />
+          <Navigation
+            userName={userName}
+            activeSection={activeSection}
+            onSectionChange={setActiveSection}
+            onLogout={handleLogout}
+          />
+          <div className="flex flex-1 overflow-hidden">
+            {/* Main content area */}
+            <div className="flex-1 overflow-auto">
+              <div className="container mx-auto px-4 py-8">
+                {renderSection()}
               </div>
-            </DialogContent>
-          </Dialog>
+            </div>
+            
+            {/* Desktop: Always visible sidebar */}
+            {!isMobile && (
+              <div className="w-96 border-l bg-card/50 backdrop-blur-sm p-4 hidden md:block">
+                <div className="h-full overflow-hidden">
+                  <AIAssistant userId={userId} />
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Mobile: Floating AI Assistant Button */}
+          {isMobile && !isAIAssistantOpen && (
+            <Button
+              className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-50"
+              onClick={() => setIsAIAssistantOpen(true)}
+            >
+              <MessageCircle className="h-6 w-6" />
+            </Button>
+          )}
         </>
       )}
     </div>
