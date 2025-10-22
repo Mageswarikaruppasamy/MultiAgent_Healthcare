@@ -83,32 +83,6 @@ export const MoodTracker = ({ userId, onMoodLogged }: MoodTrackerProps) => {
             );
           })}
         </div>
-
-        {/* Text Input */}
-        <div className="space-y-3">
-          <label className="text-sm font-medium">Describe your mood</label>
-          <Textarea
-            value={moodText}
-            onChange={(e) => setMoodText(e.target.value)}
-            placeholder="I'm feeling..."
-            className="min-h-[100px]"
-            disabled={loading}
-          />
-          <Button
-            onClick={() => handleMoodSubmit(moodText)}
-            disabled={loading || !moodText.trim()}
-            className="w-full"
-          >
-            {loading ? (
-              <>
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent mr-2" />
-                Logging...
-              </>
-            ) : (
-              'Log Mood'
-            )}
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );

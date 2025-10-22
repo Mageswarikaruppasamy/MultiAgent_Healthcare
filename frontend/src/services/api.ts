@@ -229,6 +229,19 @@ export const healthcareApi = {
     return response.data;
   },
 
+  // Specialized AI Assistant methods
+  handleMoodLogging: async (userId: number, userInput: string) => {
+    return await healthcareApi.logMood(userId, '', userInput);
+  },
+
+  handleMealPlanning: async (userId: number, requirements?: string) => {
+    return await healthcareApi.generateMealPlan(userId, requirements);
+  },
+
+  handleNutritionAnalysis: async (userId: number, mealDescription: string) => {
+    return await healthcareApi.logFood(userId, mealDescription);
+  },
+
   // User summary
   getUserSummary: async (userId: number): Promise<UserSummary> => {
     const response = await api.get(`/api/users/${userId}/summary`);

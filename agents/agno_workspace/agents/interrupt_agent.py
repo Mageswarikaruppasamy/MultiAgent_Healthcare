@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from functools import lru_cache
 import time
 import google.generativeai as genai
+import re
 
 # Load environment variables
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -45,6 +46,64 @@ def get_connection():
 
 def classify_question(query: str) -> str:
     query = query.lower()
+    
+    # Check if it's a question (starts with question words or contains question marks)
+    question_words = ["why", "how", "what", "when", "where", "which", "who", "whom", "whose"]
+    is_question = any(query.startswith(word) for word in question_words) or "?" in query
+    
+    # Check for glucose logging requests
+    glucose_keywords = ["glucose", "blood sugar", "sugar level", "cgm"]
+    has_glucose_keyword = any(keyword in query for keyword in glucose_keywords)
+    has_number = any(char.isdigit() for char in query)
+    
+    if has_glucose_keyword and has_number and not is_question:
+        return "glucose_logging"
+    
+    # Check for mood logging requests
+    mood_keywords = ["happy", "sad", "angry", "calm", "tired", "anxious", "feeling"]
+    has_mood_keyword = any(keyword in query for keyword in mood_keywords)
+    
+    if has_mood_keyword and not is_question:
+        return "mood_logging"
+    
+    # Check for meal planning requests
+    meal_keywords = ["meal", "plan", "breakfast", "lunch", "dinner", "generate"]
+    has_meal_keyword = any(keyword in query for keyword in meal_keywords)
+    
+    if has_meal_keyword and not is_question:
+        return "meal_planning"
+    
+    # Check for nutrition analysis requests
+    nutrition_keywords = ["nutrition", "nutrients", "calories", "protein", "carbs", "fat", "analyze"]
+    question_phrases = ["what are", "how much", "tell me"]
+    has_nutrition_keyword = any(keyword in query for keyword in nutrition_keywords)
+    has_question_phrase = any(phrase in query for phrase in question_phrases)
+    
+    # More specific detection for nutrition analysis requests
+    nutrition_food_phrases = [
+        "nutrition values in", 
+        "nutrients in", 
+        "calories in", 
+        "protein in", 
+        "carbs in", 
+        "fat in",
+        "nutrition of",
+        "nutrients of",
+        "calories of",
+        "protein of",
+        "carbs of",
+        "fat of"
+    ]
+    
+    has_nutrition_food_phrase = any(phrase in query for phrase in nutrition_food_phrases)
+    
+    # Consider it a nutrition analysis request if:
+    # 1. It has nutrition keywords and question phrases, OR
+    # 2. It has specific nutrition+food phrases (even without question words), OR
+    # 3. It starts with "what are" and has nutrition keywords
+    if (has_nutrition_keyword and has_question_phrase) or has_nutrition_food_phrase or (query.startswith("what are") and has_nutrition_keyword):
+        return "nutrition_analysis"
+    
     health_score_keywords = ["health score", "how healthy", "health rating", "wellness score"]
     if any(keyword in query for keyword in health_score_keywords):
         return "health_score"
@@ -182,7 +241,204 @@ def interrupt_agent(user_id: int = None, query: str = "", current_context: dict 
 
     question_type = classify_question(query)
 
-    if question_type == "health_score":
+    if question_type == "glucose_logging":
+        # Import CGM agent functions
+        try:
+            from cgm_agent import cgm_agent, run_tool as run_cgm_tool
+            # Extract glucose value from query
+            glucose_match = re.search(r'\b\d{2,3}\b', query)
+            if glucose_match:
+                glucose_value = int(glucose_match.group())
+                result = run_cgm_tool(cgm_agent, "check_glucose", user_id=user_id, glucose_reading=glucose_value, action="log")
+                if result.get("success"):
+                    status = result.get("status", "Normal")
+                    recommendations = result.get("recommendations", [])
+                    rec_text = "\n".join([f"• {rec}" for rec in recommendations]) if recommendations else "Keep monitoring your glucose regularly."
+                    
+                    return {
+                        "success": True,
+                        "message": f"Your glucose reading of {glucose_value} mg/dL has been logged successfully!\nStatus: {status}\n\nRecommendations:\n{rec_text}",
+                        "question_type": question_type,
+                        "response_source": "cgm_agent",
+                        "navigation_suggestion": None,
+                        "continue_flow": True,
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "message": result.get("message", "Failed to log glucose reading"),
+                        "question_type": question_type,
+                        "response_source": "cgm_agent",
+                        "navigation_suggestion": None,
+                        "continue_flow": True,
+                    }
+            else:
+                return {
+                    "success": False,
+                    "message": "I couldn't find a valid glucose value in your message. Please provide a number between 50-500 mg/dL.",
+                    "question_type": question_type,
+                    "response_source": "cgm_agent",
+                    "navigation_suggestion": None,
+                    "continue_flow": True,
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Error logging glucose: {str(e)}",
+                "question_type": question_type,
+                "response_source": "error",
+                "navigation_suggestion": None,
+                "continue_flow": True,
+            }
+
+    elif question_type == "mood_logging":
+        # Import mood tracker agent functions
+        try:
+            from mood_tracker_agent import mood_tracker_agent, run_tool as run_mood_tool
+            # Extract mood from query
+            result = run_mood_tool(mood_tracker_agent, "mood_tracker", user_id=user_id, user_input=query, action="log")
+            if result.get("success"):
+                return {
+                    "success": True,
+                    "message": f"Your mood '{result.get('logged_mood')}' has been logged successfully!",
+                    "question_type": question_type,
+                    "response_source": "mood_tracker",
+                    "navigation_suggestion": None,
+                    "continue_flow": True,
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": result.get("message", "Failed to log mood"),
+                    "question_type": question_type,
+                    "response_source": "mood_tracker",
+                    "navigation_suggestion": None,
+                    "continue_flow": True,
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Error logging mood: {str(e)}",
+                "question_type": question_type,
+                "response_source": "error",
+                "navigation_suggestion": None,
+                "continue_flow": True,
+            }
+
+    elif question_type == "meal_planning":
+        # Import meal planner agent functions
+        try:
+            from meal_planner_agent import meal_planner_agent, run_tool as run_meal_tool
+            # Extract special requirements from query
+            special_requirements = query
+            result = run_meal_tool(meal_planner_agent, "meal_planner", user_id=user_id, special_requirements=special_requirements, action="generate")
+            if result.get("success") and result.get("meal_plan"):
+                meal_plan = result.get("meal_plan")
+                response_text = f"Here's your personalized meal plan:\n\n"
+                response_text += f"**Breakfast:** {meal_plan.get('breakfast', {}).get('name', 'N/A')}\n"
+                response_text += f"- {meal_plan.get('breakfast', {}).get('description', 'N/A')}\n\n"
+                response_text += f"**Lunch:** {meal_plan.get('lunch', {}).get('name', 'N/A')}\n"
+                response_text += f"- {meal_plan.get('lunch', {}).get('description', 'N/A')}\n\n"
+                response_text += f"**Dinner:** {meal_plan.get('dinner', {}).get('name', 'N/A')}\n"
+                response_text += f"- {meal_plan.get('dinner', {}).get('description', 'N/A')}\n\n"
+                response_text += "Enjoy your meals!"
+                
+                return {
+                    "success": True,
+                    "message": response_text,
+                    "question_type": question_type,
+                    "response_source": "meal_planner",
+                    "navigation_suggestion": None,
+                    "continue_flow": True,
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": result.get("message", "Failed to generate meal plan"),
+                    "question_type": question_type,
+                    "response_source": "meal_planner",
+                    "navigation_suggestion": None,
+                    "continue_flow": True,
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Error generating meal plan: {str(e)}",
+                "question_type": question_type,
+                "response_source": "error",
+                "navigation_suggestion": None,
+                "continue_flow": True,
+            }
+
+    elif question_type == "nutrition_analysis":
+        # Import food intake agent functions
+        try:
+            from food_intake_agent import food_intake_agent, run_tool as run_food_tool
+            # Extract meal description from query
+            meal_description = query
+            
+            # Extract the food item from the request
+            # Look for patterns like "nutrition values in [food]" or "nutrients in [food]"
+            nutrition_food_phrases = [
+                "nutrition values in", 
+                "nutrients in", 
+                "calories in", 
+                "protein in", 
+                "carbs in", 
+                "fat in",
+                "nutrition of",
+                "nutrients of",
+                "calories of",
+                "protein of",
+                "carbs of",
+                "fat of"
+            ]
+            
+            for phrase in nutrition_food_phrases:
+                if phrase in query.lower():
+                    parts = query.split(phrase)
+                    if len(parts) > 1:
+                        meal_description = parts[1].strip()
+                        break
+            
+            result = run_food_tool(food_intake_agent, "food_intake", user_id=user_id, meal_description=meal_description, action="log")
+            if result.get("success") and result.get("nutrition_analysis"):
+                nutrition = result.get("nutrition_analysis")
+                response_text = f"Nutrition analysis for \"{meal_description}\":\n\n"
+                response_text += f"Calories: {nutrition.get('calories', 0)} kcal\n"
+                response_text += f"Protein: {nutrition.get('protein', 0)} g\n"
+                response_text += f"Carbohydrates: {nutrition.get('carbohydrates', 0)} g\n"
+                response_text += f"Fat: {nutrition.get('fat', 0)} g\n\n"
+                response_text += "I've also logged this meal for you!"
+                
+                return {
+                    "success": True,
+                    "message": response_text,
+                    "question_type": question_type,
+                    "response_source": "food_intake",
+                    "navigation_suggestion": None,
+                    "continue_flow": True,
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": result.get("message", "Failed to analyze nutrition"),
+                    "question_type": question_type,
+                    "response_source": "food_intake",
+                    "navigation_suggestion": None,
+                    "continue_flow": True,
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Error analyzing nutrition: {str(e)}",
+                "question_type": question_type,
+                "response_source": "error",
+                "navigation_suggestion": None,
+                "continue_flow": True,
+            }
+
+    elif question_type == "health_score":
         if user_id is None:
             answer_data = {
                 "answer": "I need your user ID to calculate your health score.",

@@ -4,12 +4,14 @@ import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 
 const TOAST_LIMIT = 1;
 const TOAST_REMOVE_DELAY = 1000000;
+const SUCCESS_TOAST_AUTO_DISMISS_DELAY = 2000; // 2 seconds for success messages
 
 type ToasterToast = ToastProps & {
   id: string;
   title?: React.ReactNode;
   description?: React.ReactNode;
   action?: ToastActionElement;
+  autoDismiss?: boolean; // New property to control auto-dismiss
 };
 
 const actionTypes = {
@@ -143,6 +145,13 @@ function toast({ ...props }: Toast) {
       toast: { ...props, id },
     });
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id });
+
+  // Auto-dismiss success messages after 2 seconds
+  if (!props.variant || props.variant === "default") {
+    setTimeout(() => {
+      dispatch({ type: "DISMISS_TOAST", toastId: id });
+    }, SUCCESS_TOAST_AUTO_DISMISS_DELAY);
+  }
 
   dispatch({
     type: "ADD_TOAST",

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { healthcareApi } from '@/services/api';
 import { toast } from '@/hooks/use-toast';
-import { Clock } from 'lucide-react';
+import { Clock, UtensilsCrossed } from 'lucide-react';
 
 interface FoodLoggerProps {
   userId: number;

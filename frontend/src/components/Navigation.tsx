@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { Activity, Heart, Droplet, UtensilsCrossed, CalendarDays, MessageSquare, LogOut } from 'lucide-react';
+import { Activity, Heart, Droplet, UtensilsCrossed, CalendarDays } from 'lucide-react';
 
 interface NavigationProps {
   userName: string;
@@ -15,7 +15,7 @@ export const Navigation = ({ userName, activeSection, onSectionChange, onLogout 
     { id: 'glucose', label: 'Glucose Monitor', icon: Droplet },
     { id: 'food', label: 'Food Logger', icon: UtensilsCrossed },
     { id: 'meal', label: 'Meal Planner', icon: CalendarDays },
-    { id: 'chat', label: 'AI Assistant', icon: MessageSquare },
+    // Removed chat section since AI Assistant is always available
   ];
 
   return (
@@ -24,7 +24,6 @@ export const Navigation = ({ userName, activeSection, onSectionChange, onLogout 
         <div className="flex items-center justify-between py-4">
           <h2 className="text-lg font-semibold">Welcome, {userName}!</h2>
           <Button variant="outline" size="sm" onClick={onLogout} className="gap-2">
-            <LogOut className="h-4 w-4" />
             Logout
           </Button>
         </div>

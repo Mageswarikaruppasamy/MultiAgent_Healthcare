@@ -199,74 +199,60 @@ export const MealPlanGenerator = ({ userId }: MealPlanGeneratorProps) => {
       );
     }
     
-    // Handle default meal case
-    const isDefaultMeal = meal && 
-      'name' in meal &&
-      meal.name === "Default meal" && 
-      meal.description === "Default description" &&
-      meal.estimated_nutrition?.calories === 0 &&
-      meal.estimated_nutrition?.carbs === 0 &&
-      meal.estimated_nutrition?.protein === 0 &&
-      meal.estimated_nutrition?.fat === 0 &&
-      meal.estimated_nutrition?.fiber === 0 &&
-      (!meal.health_benefits || meal.health_benefits.length === 0);
-
-    if (!meal || ('name' in meal && isDefaultMeal)) {
+    // Handle the case where we have the structured meal data (breakfast, lunch, dinner)
+    if (meal && 'name' in meal) {
+      const mealDetails = meal as MealDetails;
+      
       return (
         <Card className={`${bgColor}`}>
           <CardContent className="p-4">
             <div className="meal-header flex items-center gap-2 mb-2">
-              <span className="text-lg">🍽️</span>
+              <span className="text-lg">
+                {title === 'Breakfast' ? '🌅' : 
+                 title === 'Lunch' ? '☀️' : '🌙'}
+              </span>
               <h4 className="font-semibold">{title}</h4>
             </div>
-            <p className="text-sm text-muted-foreground italic">
-              No specific meal generated. Try generating a new meal plan.
-            </p>
+            
+            <div className="meal-content space-y-2">
+              <h5 className="meal-name font-medium">{mealDetails.name}</h5>
+              <p className="meal-description text-sm text-muted-foreground">{mealDetails.description}</p>
+              
+              {/* Nutrition Information */}
+              {mealDetails.estimated_nutrition && (
+                <div className="meal-nutrition">
+                  <p className="text-xs font-medium mb-1">Estimated Nutrition:</p>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                    <div>Calories: {mealDetails.estimated_nutrition.calories || 0}</div>
+                    <div>Protein: {mealDetails.estimated_nutrition.protein || 0}g</div>
+                    <div>Carbs: {mealDetails.estimated_nutrition.carbs || 0}g</div>
+                    <div>Fat: {mealDetails.estimated_nutrition.fat || 0}g</div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Health Benefits */}
+              {mealDetails.health_benefits && mealDetails.health_benefits.length > 0 && (
+                <div className="meal-health-benefits">
+                  <p className="text-xs font-medium mb-1">Health Benefits:</p>
+                  <ul className="text-xs text-muted-foreground list-disc list-inside space-y-1">
+                    {mealDetails.health_benefits.map((benefit, i) => (
+                      <li key={i}>{benefit}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       );
     }
-
-    // Handle the case where we have the old MealDetails structure
-    const mealDetails = meal as MealDetails;
-    const nutrition = mealDetails.estimated_nutrition;
-
+    
+    // Handle case where we have no meal data
     return (
       <Card className={`${bgColor}`}>
-        <CardContent className="p-4">
-          <div className="meal-header flex items-center gap-2 mb-2">
-            <span className="text-lg">
-              {title === 'Breakfast' ? '🌅' : title === 'Lunch' ? '☀️' : '🌙'}
-            </span>
-            <h4 className="font-semibold">{title}</h4>
-          </div>
-          
-          <div className="meal-content space-y-2">
-            <h5 className="meal-name font-medium">{mealDetails.name || "Not specified"}</h5>
-            <p className="meal-description text-sm text-muted-foreground">{mealDetails.description || "No description available"}</p>
-            
-            {nutrition && (
-              <div className="meal-nutrition">
-                <div className="grid grid-cols-2 gap-1 text-xs">
-                  <div><strong>{nutrition.calories !== undefined ? Math.round(nutrition.calories) : 'N/A'}</strong> cal</div>
-                  <div><strong>{nutrition.carbs !== undefined ? Math.round(nutrition.carbs) + 'g' : 'N/A'}</strong> carbs</div>
-                  <div><strong>{nutrition.protein !== undefined ? Math.round(nutrition.protein) + 'g' : 'N/A'}</strong> protein</div>
-                  <div><strong>{nutrition.fat !== undefined ? Math.round(nutrition.fat) + 'g' : 'N/A'}</strong> fat</div>
-                </div>
-              </div>
-            )}
-            
-            {mealDetails.health_benefits && mealDetails.health_benefits.length > 0 && (
-              <div className="meal-health-benefits">
-                <p className="text-xs font-medium mb-1">Health Benefits:</p>
-                <ul className="text-xs text-muted-foreground list-disc list-inside space-y-1">
-                  {mealDetails.health_benefits.slice(0, 2).map((benefit: string, i: number) => (
-                    <li key={i}>{benefit}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
+        <CardContent className="p-4 text-center text-muted-foreground">
+          <p>No {title.toLowerCase()} planned</p>
         </CardContent>
       </Card>
     );
@@ -274,25 +260,26 @@ export const MealPlanGenerator = ({ userId }: MealPlanGeneratorProps) => {
 
   return (
     <div className="space-y-6">
-      {/* User Profile Info */}
+      {/* User Profile Card */}
       {userProfile && (
-        <Card className="shadow-elegant bg-gradient-to-r from-primary/5 to-accent/5">
+        <Card className="shadow-elegant">
           <CardHeader>
-            <CardTitle>Your Health Profile</CardTitle>
+            <CardTitle>User Profile</CardTitle>
+            <CardDescription>Dietary preferences and medical conditions</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-2 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <span className="font-medium">Dietary Preferences:</span>
-                <span className="ml-2 text-muted-foreground">
+                <p className="text-sm font-medium">Dietary Preference</p>
+                <p className="text-sm text-muted-foreground">
                   {userProfile.dietary_preference || 'Not specified'}
-                </span>
+                </p>
               </div>
               <div>
-                <span className="font-medium">Medical Conditions:</span>
-                <span className="ml-2 text-muted-foreground">
-                  {userProfile.medical_conditions || 'None reported'}
-                </span>
+                <p className="text-sm font-medium">Medical Conditions</p>
+                <p className="text-sm text-muted-foreground">
+                  {userProfile.medical_conditions || 'None specified'}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -306,82 +293,86 @@ export const MealPlanGenerator = ({ userId }: MealPlanGeneratorProps) => {
             <Calendar className="h-5 w-5 text-primary" />
             Generate Meal Plan
           </CardTitle>
-          <CardDescription>
-            AI-powered personalized meal recommendations
-          </CardDescription>
+          <CardDescription>Get a personalized meal plan for tomorrow</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Textarea
-            value={specialRequirements}
-            onChange={(e) => setSpecialRequirements(e.target.value)}
-            placeholder="Any special requirements? (e.g., vegetarian, low-carb, gluten-free, high-protein)"
-            className="min-h-[100px]"
-            disabled={loading}
-          />
-          <Button
-            onClick={handleGenerateMealPlan}
-            disabled={loading}
-            className="w-full"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Generating your meal plan...
-              </>
-            ) : (
-              'Generate Meal Plan'
-            )}
-          </Button>
+        <CardContent>
+          <div className="space-y-4">
+            <Textarea
+              value={specialRequirements}
+              onChange={(e) => setSpecialRequirements(e.target.value)}
+              placeholder="Any special requirements? (e.g., low sodium, high protein, vegetarian)"
+              className="min-h-[100px]"
+              disabled={loading}
+            />
+            <Button 
+              onClick={handleGenerateMealPlan} 
+              className="w-full"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Calendar className="mr-2 h-4 w-4" />
+                  Generate Meal Plan
+                </>
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
       {/* Generated Meal Plan */}
       {mealPlan && (
-        <div className="space-y-4">
-          <h3 className="text-xl font-semibold">Your Personalized Meal Plan</h3>
-          {/* Handle the nested structure with better debugging */}
-          {(() => {
-            console.log('Rendering meal plan, mealPlan:', mealPlan);
-            
-            // Check if we have the nested meal_plan.meals structure
-            const nestedMealPlan = mealPlan['meal_plan'];
-            console.log('nestedMealPlan:', nestedMealPlan);
-            
-            if (nestedMealPlan && typeof nestedMealPlan === 'object') {
-              const mealsArray = nestedMealPlan['meals'];
-              console.log('mealsArray:', mealsArray);
-              
-              if (mealsArray && Array.isArray(mealsArray) && mealsArray.length > 0) {
-                // Create a map of meals by type for easier access
-                const mealsByType = {};
-                mealsArray.forEach((meal: ActualMeal) => {
-                  if (meal && meal.meal_type) {
-                    mealsByType[meal.meal_type.toLowerCase()] = meal;
-                  }
-                });
-                console.log('mealsByType:', mealsByType);
-                
-                return (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {renderMeal(mealsByType['breakfast'], 'Breakfast', 'bg-green-500/10')}
-                    {renderMeal(mealsByType['lunch'], 'Lunch', 'bg-blue-500/10')}
-                    {renderMeal(mealsByType['dinner'], 'Dinner', 'bg-purple-500/10')}
-                  </div>
-                );
-              }
-            }
-            
-            // Fallback to individual meal properties
-            console.log('Falling back to individual meal properties');
-            return (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {renderMeal(mealPlan.breakfast, 'Breakfast', 'bg-green-500/10')}
-                {renderMeal(mealPlan.lunch, 'Lunch', 'bg-blue-500/10')}
-                {renderMeal(mealPlan.dinner, 'Dinner', 'bg-purple-500/10')}
+        <Card className="shadow-elegant">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Flame className="h-5 w-5 text-primary" />
+              Your Personalized Meal Plan
+            </CardTitle>
+            <CardDescription>Based on your profile and preferences</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {/* Display meals in the new format */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {renderMeal(mealPlan.breakfast, 'Breakfast', 'bg-green-50')}
+              {renderMeal(mealPlan.lunch, 'Lunch', 'bg-blue-50')}
+              {renderMeal(mealPlan.dinner, 'Dinner', 'bg-purple-50')}
+            </div>
+
+            {/* Display any special notes */}
+            {mealPlan.special_notes && mealPlan.special_notes.length > 0 && (
+              <div className="mt-6 p-4 bg-yellow-50 rounded-lg">
+                <h4 className="font-medium text-yellow-800 mb-2">Special Notes</h4>
+                <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1">
+                  {mealPlan.special_notes.map((note, i) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
               </div>
-            );
-          })()}
-        </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Display the latest meal plan if no new one has been generated */}
+      {!mealPlan && (
+        <Card className="shadow-elegant">
+          <CardHeader>
+            <CardTitle>Latest Meal Plan</CardTitle>
+            <CardDescription>Your most recent personalized meal plan</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center py-12 text-muted-foreground">
+              <Calendar className="mx-auto h-12 w-12 opacity-50 mb-4" />
+              <p>No meal plan generated yet.</p>
+              <p className="text-sm mt-2">Click "Generate Meal Plan" to create your personalized plan.</p>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

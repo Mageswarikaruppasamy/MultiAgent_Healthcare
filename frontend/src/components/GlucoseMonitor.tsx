@@ -6,8 +6,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { healthcareApi, CGMData } from "@/services/api";
-import { Droplet, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Droplet, TrendingUp, TrendingDown, Minus, Plus } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 
 interface GlucoseMonitorProps {
   userId: number;
@@ -16,6 +19,8 @@ interface GlucoseMonitorProps {
 export const GlucoseMonitor = ({ userId }: GlucoseMonitorProps) => {
   const [latestReading, setLatestReading] = useState<CGMData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [glucoseInput, setGlucoseInput] = useState("");
+  const [logging, setLogging] = useState(false);
 
   useEffect(() => {
     const fetchGlucose = async () => {
@@ -41,6 +46,58 @@ export const GlucoseMonitor = ({ userId }: GlucoseMonitorProps) => {
     if (glucose > 140)
       return { status: "High", color: "text-orange-600", icon: TrendingUp };
     return { status: "Normal", color: "text-green-600", icon: Minus };
+  };
+
+  const handleLogGlucose = async () => {
+    if (!glucoseInput.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a glucose value.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const glucoseValue = parseInt(glucoseInput);
+    if (isNaN(glucoseValue) || glucoseValue < 50 || glucoseValue > 500) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a valid glucose value between 50-500 mg/dL.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLogging(true);
+    try {
+      const response = await healthcareApi.logCGM(userId, glucoseValue);
+      if (response.success) {
+        toast({
+          title: "Glucose Logged",
+          description: response.message || "Your glucose reading has been recorded successfully."
+        });
+        // Update the latest reading
+        setLatestReading({
+          glucose: glucoseValue,
+          timestamp: new Date().toISOString(),
+        });
+        setGlucoseInput("");
+      } else {
+        toast({
+          title: "Error",
+          description: response.message || "Failed to log glucose reading.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Connection Error",
+        description: "Unable to log glucose reading. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLogging(false);
+    }
   };
 
   const status = getGlucoseStatus(latestReading?.glucose);
@@ -107,6 +164,38 @@ export const GlucoseMonitor = ({ userId }: GlucoseMonitorProps) => {
               No glucose readings available yet
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Glucose Logging Form */}
+      <Card className="shadow-elegant">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Plus className="h-5 w-5 text-primary" />
+            Log Glucose Reading
+          </CardTitle>
+          <CardDescription>Enter your current blood glucose level</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              value={glucoseInput}
+              onChange={(e) => setGlucoseInput(e.target.value)}
+              placeholder="e.g., 120"
+              min="50"
+              max="500"
+              disabled={logging}
+              className="flex-1"
+            />
+            <span className="flex items-center text-muted-foreground">mg/dL</span>
+            <Button onClick={handleLogGlucose} disabled={logging}>
+              {logging ? "Logging..." : "Log"}
+            </Button>
+          </div>
+          <p className="text-sm text-muted-foreground mt-2">
+            Enter a value between 50-500 mg/dL
+          </p>
         </CardContent>
       </Card>
 
